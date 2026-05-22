@@ -40,7 +40,7 @@ struct tm timeinfo;
 struct tm NET_LOSTING_time;
 struct tm start_work_time;
 int Solenoid_Pin[3] = {27, 26, 25};      // 电磁阀使用的引脚,19\32代表菜地和最外面,有些是否浇菜地\北边围墙在后面的loop\send2client中做了index的强关联,如果此数组变化了,也要修改一下
-int pin_watering_time[3] = {2, 2, 2}; // 每个引脚浇水的时间
+int pin_watering_time[3] = {30, 30, 30}; // 每个引脚浇水的时间
 int working_solenoid_valve[3] = {0, 0, 0};   // 增加电磁阀记得修改数组长度!!!!
 int Pump_pin = 18;                                          // 水泵使用的引脚
 int auto_soil_watering_flag = 1;                            // 到达一定湿度再浇水的flag
@@ -57,6 +57,7 @@ int pump_working_flag = 0;
 int vegetable_flag_hand = 0;
 int vegetable_flag_net = 0;
 int pool_watering_flag = 0;
+int net_solenoid_flag = 0; // 网络下发数字启动电磁阀标志，用于10分钟超时保护
 // int car_wash_trigger_pin = 21;   // 手动洗车开关
 // int hand_water_trigger_pin = 22; // 手动浇水开关
 // int vegetable_knob_pin = 23;     // 菜地旋钮
@@ -78,10 +79,10 @@ int wat_begin_hour = 4;
 int wat_begin_min = 40;
 int soil2wat = 0; // 如果是这个状态代表因为土壤干燥正在浇水
 // int pinled = 32;
-const char *ssid = "family_2.4g";
-const char *password = "13505795150";
-// const char *ssid = "Franklinn";
-// const char *password = "hufeihufei";
+// const char *ssid = "family_2.4g";
+// const char *password = "13505795150";
+const char *ssid = "TP-LINK_04F926";
+const char *password = "qsh82570079";
 const char *host = "tcp.tlink.io";
 const uint16_t httpPort = 8647;
 unsigned long BEGIN_TIMESTAMP = 0; // 处理millis的返回时间,起点
@@ -802,6 +803,7 @@ void shut_all()
     Solenoid_OffAll(0);
     Serial.println("shut_all()被执行了");
     work_times = 0;
+    net_solenoid_flag = 0; // 重置网络下发电磁阀标志
 }
 
 // 再写一个把正在工作的电磁阀放到一个数组中收集好的函数
@@ -1040,6 +1042,10 @@ void loop()
             Serial.println("which pump check\n");
             pump_working_flag = 1; // 打开泵,记录flag
             Solenoid_OffAll(ch.toInt());
+            soil2wat = 1; // 设置浇水标志，确保WiFi断开后能继续浇水
+            start_work_time = timeinfo; // 记录开始时间
+            work_times = 1; // 单个电磁阀模式，只浇一轮
+            net_solenoid_flag = 1; // 设置网络下发标志，启用10分钟超时保护
             // Serial.print(working_solenoid_valve[0]);
             // Serial.print(working_solenoid_valve[1]);
             // Serial.println(working_solenoid_valve[2]);
@@ -1310,6 +1316,16 @@ void loop()
             shut_all();
             vegetable_flag_net = 0;
             vegetable_flag_hand = 0;
+        }
+    }
+    else if (1 == net_solenoid_flag) // 网络下发数字模式，10分钟超时保护
+    {
+        soil2wat = 1;
+        if (time_gap(timeinfo, start_work_time) > 10) // 超过10分钟自动关闭
+        {
+            Serial.println("网络下发电磁阀超时10分钟，自动关闭");
+            shut_all();
+            net_solenoid_flag = 0;
         }
     }
     for (i = 0; i < length(working_solenoid_valve); i++)
