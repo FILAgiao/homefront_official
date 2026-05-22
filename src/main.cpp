@@ -21,9 +21,10 @@ md 还是3个电磁阀好了。。。
 #include <Ticker.h>
 #include <String.h>
 #include <HTTPUpdate.h>
+#include <Preferences.h>
 
-// OTA升级的固件地址
-String upUrl = "http://bin.bemfa.com/b/49378/3BcM2ZlOWE5NWI3NmIyNGY2Mzg2ODk2ZGZhMGM1YWIyYjU=EYLuiEfyr006.bin";
+// OTA升级的固件地址（从NVS读取）
+String upUrl = "";
 
 /// 以下是湿度传感器所需要的数据
 #include <SoftwareSerial.h>
@@ -39,9 +40,9 @@ WiFiClient client;
 struct tm timeinfo;
 struct tm NET_LOSTING_time;
 struct tm start_work_time;
-int Solenoid_Pin[3] = {27, 26, 25};      // 电磁阀使用的引脚,19\32代表菜地和最外面,有些是否浇菜地\北边围墙在后面的loop\send2client中做了index的强关联,如果此数组变化了,也要修改一下
-int pin_watering_time[3] = {30, 30, 30}; // 每个引脚浇水的时间
-int working_solenoid_valve[3] = {0, 0, 0};   // 增加电磁阀记得修改数组长度!!!!
+int Solenoid_Pin[7] = {27, 26, 25, 0, 0, 0, 0};      // 已扩展为7个元素——电磁阀使用的引脚,19\32代表菜地和最外面,有些是否浇菜地\北边围墙在后面的loop\send2client中做了index的强关联,如果此数组变化了,也要修改一下
+int pin_watering_time[7] = {30, 30, 30, 0, 0, 0, 0}; // 已扩展为7个元素——每个引脚浇水的时间
+int working_solenoid_valve[7] = {0, 0, 0, 0, 0, 0, 0};   // 已扩展为7个元素
 int Pump_pin = 18;                                          // 水泵使用的引脚
 int auto_soil_watering_flag = 1;                            // 到达一定湿度再浇水的flag
 int auto_timing_watering_flag = 0;                          // 按照时间进行浇水的引脚
@@ -81,8 +82,8 @@ int soil2wat = 0; // 如果是这个状态代表因为土壤干燥正在浇水
 // int pinled = 32;
 // const char *ssid = "family_2.4g";
 // const char *password = "13505795150";
-const char *ssid = "TP-LINK_04F926";
-const char *password = "qsh82570079";
+String ssid = "";
+String password = "";
 const char *host = "tcp.tlink.io";
 const uint16_t httpPort = 8647;
 unsigned long BEGIN_TIMESTAMP = 0; // 处理millis的返回时间,起点
@@ -96,19 +97,18 @@ const unsigned long wifiRetryInterval = 300;   // WiFi 连接重试间隔（毫�
 const unsigned long clientRetryInterval = 500; // 服务器连接重试间隔（毫秒）
 int time_gap_min = 0;                          // 浇水的时间是否已经达到要求？
 // const char *device_id = "R6P6K29X5PW1L607";// fixme:这个是测试组
-const char *device_id = "7DV2YM9V6REVG96N";
+String device_id = "";
 //
 /* 这些是设置时间的代码,但是现在被换为阿里云了
 const char *ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 4 * 3600;     //不知道为何是4*60*60
 const int daylightOffset_sec = 4 * 3600; //不知道为何是4*60*60
 */
-int i = 0;
 int wifi_retry_times = 0;
 int wifi_to_reboot_times = 0;
 // int led_switch = 0;
-int breakpoint_flag = 1; // 23333这个是控制断点的,不是time_flag
-char data[64];           // 回传的一大条数据都在里面，注意数据长度
+volatile int breakpoint_flag = 1; // 23333这个是控制断点的,不是time_flag
+char data[128];           // 回传的一大条数据都在里面，注意数据长度
 char time_temp[10];
 char set_begin_time[10];
 //****************************************************************以下是OTA远程升级代码
@@ -238,7 +238,7 @@ void send2clinet()
         corner_t = 0;
     }
     sprintf(data, "#%d*%d*%d*%d*%d*%f*%d*%s*%d*%f*%d*%s*%d*%d*%d#",
-         solenoid_line, carwash_flag, auto_soil_watering_flag, auto_timing_watering_flag,hand_watering_flag, soil_moisture, pump_working_flag, time_status, reboot_flag, soil_moisture_need, pin_watering_time[0], set_begin_time,  ota_status,0, physical_buttons);
+         solenoid_line, carwash_flag, auto_soil_watering_flag, auto_timing_watering_flag,hand_watering_flag, soil_moisture, pump_working_flag, time_status.c_str(), reboot_flag, soil_moisture_need, pin_watering_time[0], set_begin_time,  ota_status,0, physical_buttons);
     // unsigned
     // sprintf(data, "#1*%d*%d*%d*%d*%d#", carwash_flag, auto_watering_flag, hand_watering_flag, soil_moisture, pump_working_flag);
     Serial.print("回送的数据为：");
@@ -353,7 +353,7 @@ void Solenoid_OffAll(int a = 0) // here are just flags,no electricity;just solen
     // 输入的a不是index,而是人为的编号
     solenoid_line = a;
     hand_watering_flag = 0;
-    for (i = 0; i < length(Solenoid_Pin); i++)
+    for (int i = 0; i < length(Solenoid_Pin); i++)
     {
         if (a != 0 && i == a - 1)
         {
@@ -526,7 +526,7 @@ void flag_execute() // 这个函数只负责给电,不负责别的操作
                 state_start_time = millis();
                 
                 // 打开需要工作的电磁阀
-                for (i = 0; i < length(working_solenoid_valve); i++)
+                for (int i = 0; i < length(working_solenoid_valve); i++)
                 {
                     if (working_solenoid_valve[i] == 1)
                     {
@@ -572,7 +572,7 @@ void flag_execute() // 这个函数只负责给电,不负责别的操作
                 int current_working_valve = -1;
                 
                 // 找到当前工作的电磁阀
-                for (i = 0; i < length(working_solenoid_valve); i++)
+                for (int i = 0; i < length(working_solenoid_valve); i++)
                 {
                     if (working_solenoid_valve[i] == 1)
                     {
@@ -608,7 +608,7 @@ void flag_execute() // 这个函数只负责给电,不负责别的操作
                     {
                         // 首次启动或从无到有，直接打开新阀门
                         // 关闭所有电磁阀
-                        for (i = 0; i < length(working_solenoid_valve); i++)
+                        for (int i = 0; i < length(working_solenoid_valve); i++)
                         {
                             digitalWrite(Solenoid_Pin[i], LOW);
                         }
@@ -656,9 +656,9 @@ void flag_execute() // 这个函数只负责给电,不负责别的操作
                 current_state = STATE_CLOSE_VALVE;
                 state_start_time = millis();
                 solenoid_line = 0;
-                
+
                 // 关闭所有电磁阀
-                for (i = 0; i < length(working_solenoid_valve); i++)
+                for (int i = 0; i < length(working_solenoid_valve); i++)
                 {
                     digitalWrite(Solenoid_Pin[i], LOW);
                 }
@@ -750,7 +750,6 @@ bool soil_go()
     if (soil2wat == 1 || work_times > 0)
     {                // 表示目前水还在浇水
         return true; //?这样写对吗
-        Serial.println("1");
     }
     if (soil_moisture_need > soil_moisture && auto_soil_watering_flag == 1 && soil_moisture != 0) // 还要判断一下土壤湿度是不是没有正常返回回来
     {
@@ -889,15 +888,179 @@ bool lower_noise(int pin_to_listen, int pin_status_wanted)
 //     }
 // }
 
+// 从NVS读取配置
+void loadConfig()
+{
+    Preferences prefs;
+    prefs.begin("homefront", true);
+    ssid = prefs.getString("ssid", "");
+    password = prefs.getString("password", "");
+    device_id = prefs.getString("device_id", "");
+    upUrl = prefs.getString("upUrl", "");
+    prefs.end();
+    Serial.println("loadConfig done");
+    if (ssid.length() > 0)
+    {
+        Serial.print("ssid: ");
+        Serial.println(ssid);
+    }
+    else
+    {
+        Serial.println("no saved ssid, need config portal");
+    }
+}
+
+// 启动配置门户：AP模式 + HTTP服务器提供网页配置
+void startConfigPortal()
+{
+    Serial.println("startConfigPortal: no saved WiFi config, starting AP...");
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP("Homefront-Setup");
+    Serial.print("AP IP: ");
+    Serial.println(WiFi.softAPIP());
+
+    WiFiServer server(80);
+    server.begin();
+    Serial.println("HTTP config server started on port 80");
+
+    while (true)
+    {
+        WiFiClient client = server.available();
+        if (!client)
+        {
+            delay(10);
+            continue;
+        }
+
+        String request = "";
+        unsigned long timeout = millis() + 5000;
+        while (client.connected() && millis() < timeout)
+        {
+            if (client.available())
+            {
+                char c = client.read();
+                request += c;
+                if (request.endsWith("\r\n\r\n"))
+                    break;
+            }
+        }
+
+        if (request.indexOf("POST /save") >= 0)
+        {
+            // 解析POST body
+            String body = "";
+            int bodyStart = request.indexOf("\r\n\r\n");
+            if (bodyStart >= 0)
+                body = request.substring(bodyStart + 4);
+
+            String newSsid = "", newPass = "", newDeviceId = "", newUpUrl = "";
+            int pos = 0;
+            while (pos < body.length())
+            {
+                int eqPos = body.indexOf('=', pos);
+                int ampPos = body.indexOf('&', pos);
+                if (ampPos == -1)
+                    ampPos = body.length();
+                if (eqPos >= 0 && eqPos < ampPos)
+                {
+                    String key = body.substring(pos, eqPos);
+                    String value = body.substring(eqPos + 1, ampPos);
+                    value.replace("+", " ");
+                    value.replace("%25", "%");
+                    value.replace("%21", "!");
+                    value.replace("%23", "#");
+                    value.replace("%24", "$");
+                    value.replace("%26", "&");
+                    value.replace("%27", "'");
+                    value.replace("%28", "(");
+                    value.replace("%29", ")");
+                    value.replace("%2A", "*");
+                    value.replace("%2B", "+");
+                    value.replace("%2C", ",");
+                    value.replace("%2F", "/");
+                    value.replace("%3A", ":");
+                    value.replace("%3B", ";");
+                    value.replace("%3D", "=");
+                    value.replace("%3F", "?");
+                    value.replace("%40", "@");
+
+                    if (key == "ssid")
+                        newSsid = value;
+                    else if (key == "password")
+                        newPass = value;
+                    else if (key == "device_id")
+                        newDeviceId = value;
+                    else if (key == "upUrl")
+                        newUpUrl = value;
+                }
+                pos = ampPos + 1;
+            }
+
+            // 保存到NVS
+            if (newSsid.length() > 0 || newPass.length() > 0 || newDeviceId.length() > 0 || newUpUrl.length() > 0)
+            {
+                Preferences prefs;
+                prefs.begin("homefront", false);
+                if (newSsid.length() > 0)
+                    prefs.putString("ssid", newSsid);
+                if (newPass.length() > 0)
+                    prefs.putString("password", newPass);
+                if (newDeviceId.length() > 0)
+                    prefs.putString("device_id", newDeviceId);
+                if (newUpUrl.length() > 0)
+                    prefs.putString("upUrl", newUpUrl);
+                prefs.end();
+            }
+
+            String resp = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n";
+            resp += "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Saved</title>";
+            resp += "<meta http-equiv='refresh' content='3;url=/'></head><body>";
+            resp += "<h1>Config Saved! Restarting...</h1></body></html>";
+            client.print(resp);
+            client.stop();
+
+            delay(2000);
+            ESP.restart();
+        }
+        else
+        {
+            String html = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n";
+            html += "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Homefront Setup</title>";
+            html += "<meta name='viewport' content='width=device-width,initial-scale=1'>";
+            html += "<style>body{font-family:Arial;max-width:400px;margin:20px auto;padding:20px;}";
+            html += "input{width:100%;padding:8px;margin:5px 0;box-sizing:border-box;}";
+            html += "input[type=submit]{background:#4CAF50;color:#fff;border:none;padding:12px;font-size:16px;}</style></head><body>";
+            html += "<h2>Homefront Config Portal</h2>";
+            html += "<form method='POST' action='/save'>";
+            html += "<label>WiFi SSID:</label><input name='ssid' value='" + ssid + "' required>";
+            html += "<label>WiFi Password:</label><input name='password' type='password' value='" + password + "'>";
+            html += "<label>Device ID:</label><input name='device_id' value='" + device_id + "'>";
+            html += "<label>OTA URL:</label><input name='upUrl' value='" + upUrl + "'>";
+            html += "<input type='submit' value='Save & Restart'>";
+            html += "</form></body></html>";
+            client.print(html);
+            client.stop();
+        }
+    }
+}
+
 void setup()
 {
     // put your setup code here, to run once:
     tempSerial.begin(4800);
     Serial.begin(9600);
     configTime(8 * 3600, 0, "ntp1.aliyun.com", "ntp2.aliyun.com");
-    // configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
     delay(10);
-    for (i = 0; i < length(Solenoid_Pin); i++)
+
+    // 从NVS加载配置；如果没有WiFi凭据则启动配置门户
+    loadConfig();
+    if (ssid.length() == 0)
+    {
+        startConfigPortal();
+        return;
+    }
+
+    for (int i = 0; i < length(Solenoid_Pin); i++)
     {
         pinMode(Solenoid_Pin[i], OUTPUT);
         digitalWrite(Solenoid_Pin[i], LOW);
@@ -927,7 +1090,7 @@ void setup()
     Serial.print("Connecting to ");
     Serial.println(ssid);
 
-    WiFi.begin(ssid, password);
+    WiFi.begin(ssid.c_str(), password.c_str());
     wifi_reconnect_cx();
     // while (WiFi.status() != WL_CONNECTED)
     // {
@@ -1262,7 +1425,7 @@ void loop()
                 if (work_times > 0)
                 {
                     soil2wat = 1; // 代表此刻正在浇水
-                    for (i = 0; i < length(working_solenoid_valve); i++)
+                    for (int i = 0; i < length(working_solenoid_valve); i++)
                     {
 
                         working_solenoid_valve[i] = 0;
@@ -1328,7 +1491,7 @@ void loop()
             net_solenoid_flag = 0;
         }
     }
-    for (i = 0; i < length(working_solenoid_valve); i++)
+    for (int i = 0; i < length(working_solenoid_valve); i++)
     {
 
         Serial.print(working_solenoid_valve[i]);
