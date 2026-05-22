@@ -1,0 +1,2254 @@
+SCH_核心板_2026-03-12.pdf
+PDF
+你可以解析这个文件吗？这是一块pcb板子，上面接有继电器什么的，通过插入一个esp32进行控制，我现在在设计主控esp32的相关功能，但是我都看不懂这个引脚控制、分布情况，你可以吗
+
+可以，而且这个原理图其实画得还算规范，我已经基本把整个控制逻辑理清了。
+
+你现在的核心问题其实不是“看不懂ESP32”，而是：
+
+不知道 ESP32 的 GPIO 最终控制了什么、信号怎么流动、哪些能直接驱动、哪些只是逻辑控制。
+
+这份板子本质上是：
+
+ESP32 做主控
+74HC595 做 IO 扩展
+光耦 + 三极管 驱动继电器
+RS485 / I2C / ADC / 外部输入 都是外围功能
+
+我给你直接拆成“程序员视角”的结构。
+
+1. 整个板子的核心结构（非常重要）
+
+整个系统其实是：
+
+ESP32
+ ├── OLED显示屏(I2C)
+ ├── RS485通信(UART)
+ ├── LoRa模块(UART2)
+ ├── 按键
+ ├── EC11旋钮
+ ├── ADC采样
+ ├── 外部开关输入
+ └── 74HC595
+        └── 8路继电器
+
+真正控制继电器的不是 ESP32 GPIO 直接输出。
+
+而是：
+
+ESP32
+ → 74HC595
+   → 光耦
+     → 三极管
+       → 继电器
+
+这就是你看到一堆 SW0~SW7 的原因。
+
+2. 最关键：ESP32 引脚分配（你真正需要的）
+
+这是我根据原理图帮你整理出来的。
+
+ESP32 GPIO 分配总表
+
+来自第一页
+
+功能	ESP32引脚
+IIC_SDA	GPIO21
+IIC_SCL	GPIO22
+SPI_MOSI	GPIO23
+SPI_MISO	GPIO19
+SPI_SCK	GPIO18
+HC595_DS	未明确，但属于GPIO输出
+HC595_SHCP	未明确
+HC595_STCP	未明确
+KEY1	GPIO输入
+KEY2	GPIO输入
+KEY3	GPIO输入
+EC11_A	GPIO输入
+EC11_B	GPIO输入
+EC11_KEY	GPIO输入
+U2_RX	GPIO16
+U2_TX	GPIO17
+U1_RX	GPIO3
+U1_TX	GPIO1
+ADC_IN1	ADC
+ADC_IN2	ADC
+SG_IN1	GPIO输入
+SG_IN2	GPIO输入
+3. 继电器到底怎么控制（这是核心）
+
+看第6页 + 第7页。
+
+ESP32 并不是直接控制继电器
+
+ESP32 只控制：
+
+HC595_DS
+HC595_SHCP
+HC595_STCP
+
+三个引脚。
+
+这是：
+
+74HC595 移位寄存器
+
+作用：
+
+3根线 → 扩展成16路输出
+
+原理图自己都写了：
+
+“3线控制16线输出”
+
+4. SW0~SW7 才是真正的继电器控制信号
+
+看第7页。
+
+SW0 → 继电器1
+SW1 → 继电器2
+...
+SW7 → 继电器8
+
+所以程序逻辑是：
+
+ESP32
+→ 往74HC595写8bit
+→ SW0~SW7变化
+→ 光耦导通
+→ 三极管导通
+→ 继电器吸合
+5. 你在ESP32里真正要写的代码
+
+你以后最核心的就是：
+
+初始化 74HC595
+
+比如：
+
+#define HC595_DS    25
+#define HC595_SHCP  26
+#define HC595_STCP  27
+
+（具体 GPIO 要你自己确认 PCB 最终连线）
+
+写一个 relayWrite()
+uint8_t relayState = 0;
+
+void relayWrite()
+{
+    shiftOut(HC595_DS, HC595_SHCP, MSBFIRST, relayState);
+
+    digitalWrite(HC595_STCP, LOW);
+    digitalWrite(HC595_STCP, HIGH);
+}
+控制继电器
+
+比如打开继电器3：
+
+relayState |= (1 << 2);
+relayWrite();
+
+关闭：
+
+relayState &= ~(1 << 2);
+relayWrite();
+6. 为什么设计成这样，而不是 GPIO 直接控制？
+
+因为：
+
+ESP32 GPIO 不够。
+
+你这里：
+
+OLED
+RS485
+LoRa
+ADC
+EC11
+按键
+输入检测
+
+已经占很多 IO 了。
+
+74HC595 可以：
+
+3个GPIO → 扩展16个输出
+
+非常经典。
+
+7. RS485 部分你也需要懂
+
+第2页。
+
+这里用了：
+
+SP3485
+
+这是：
+
+UART ↔ RS485
+
+转换芯片。
+
+你程序里其实还是：
+
+Serial2.write()
+
+只是物理层变成 RS485。
+
+8. OLED 怎么控制
+
+第4页。
+
+标准 I2C：
+
+GPIO21 SDA
+GPIO22 SCL
+
+程序：
+
+Wire.begin(21,22);
+
+就行。
+
+9. 外部输入（限位开关等）
+
+第12页。
+
+SG_IN1 / SG_IN2：
+
+只能接无源开关
+
+原理图已经写了：
+
+不允许有源器件接入
+
+因为这里经过光耦。
+
+适合：
+
+限位开关
+干簧管
+门磁
+
+程序：
+
+digitalRead(SG_IN1)
+
+即可。
+
+10. ADC 部分你尤其要注意
+
+第11页。
+
+这里默认：
+
+10:1 分压
+
+也就是说：
+
+输入 0~33V
+
+ESP32 ADC 实际看到：
+
+0~3.3V
+
+程序里要乘回来：
+
+realVoltage = adcVoltage * 10;
+11. 这个板子最值得你注意的几个点
+（1）继电器电流非常大
+
+原理图写了：
+
+总吸合电流 1850mA
+
+所以：
+
+不要USB供电
+5V必须稳
+WiFi发射瞬间会掉压
+
+否则 ESP32 重启。
+
+（2）继电器用了光耦隔离
+
+这是非常好的设计。
+
+说明：
+
+ESP32 很安全。
+
+（3）AC 高压区域要小心
+
+这里已经涉及：
+
+220V AC
+
+别直接手摸。
+
+12. 你现在真正应该做什么
+
+你下一步应该：
+
+第一步
+
+先建立：
+
+GPIO Mapping 表
+
+例如：
+
+#define PIN_I2C_SDA     21
+#define PIN_I2C_SCL     22
+
+#define PIN_595_DS      xx
+#define PIN_595_SHCP    xx
+#define PIN_595_STCP    xx
+
+#define PIN_KEY1        xx
+#define PIN_KEY2        xx
+
+#define PIN_EC11_A      xx
+第二步
+
+优先完成：
+
+74HC595 驱动
+
+因为：
+
+继电器是整个系统核心。
+
+第三步
+
+做：
+
+继电器抽象层
+
+例如：
+
+relayOn(1);
+relayOff(1);
+
+而不是到处写位运算。
+
+13. 你这块板子的架构，其实已经挺专业了
+
+它已经具备：
+
+电源隔离
+光耦隔离
+IO扩展
+RS485工业通信
+模块化输入输出
+ADC隔离
+LoRa扩展
+
+已经接近：
+
+工业控制器/PLC
+
+的结构了。
+
+不是普通玩具板。
+
+如果你愿意，我下一步还能继续帮你：
+
+反推出：
+HC595 三个控制脚到底接 ESP32 哪个 GPIO
+给你：
+完整 ESP32 固件架构
+直接生成：
+PlatformIO 工程结构
+FreeRTOS任务划分
+relay.cpp
+io.cpp
+rs485.cpp
+oled.cpp
+帮你做：
+“工业级”状态机架构
+甚至帮你：
+自动配网
+Web控制
+MQTT
+OTA
+Modbus RTU
+HomeAssistant 接入
+
+这块板非常适合做完整工业控制系统。
+
+我之前写了一版代码，那个是我手动焊接的控制器实现的，现在我准备把这个代码放到刚刚和你说的这个pcb上，功能不变，但是很多引脚都要变成新的。我的显示屏比较小，0.96的，你觉得我怎么组织我的菜单和展示相关的信息？展示什么内容？还有怎么控制页面？这是我的代码：/*注意事项
+本程序初步决定使用的是四个电磁阀，三个园子一个后面
+如果要加电磁阀的话，有些部分的电磁阀遍历规律是不一样的
+/////我是分割线///////
+md 还是3个电磁阀好了。。。
+让电磁阀一个一个工作！，水不够了
+*/
+
+/*
+现在要做一个使用物理按钮进行浇水的东西,我认为,如果使用物理按钮,是否能同时使用手机?
+应该可以,不管是哪个之间都要做好切换
+
+
+*/
+// todo:可以做一个不同地区的不同浇水比例的工具
+////我觉得时间变量的销毁有问题!!!
+////// really important👆/////已经修改
+#include <Arduino.h>
+#include <WiFi.h>
+#include <ArduinoJson.h>
+#include <Ticker.h>
+#include <String.h>
+#include <HTTPUpdate.h>
+
+// OTA升级的固件地址
+String upUrl = "http://bin.bemfa.com/b/49378/3BcM2ZlOWE5NWI3NmIyNGY2Mzg2ODk2ZGZhMGM1YWIyYjU=EYLuiEfyr006.bin";
+
+/// 以下是湿度传感器所需要的数据
+#include <SoftwareSerial.h>
+unsigned char item[8] = {0x01, 0x03, 0x00, 0x00, 0x00, 0x02, 0xC4, 0x0B}; // 16进制测温命令
+String data_soil = "";                                                    // 接收到的16进制字符串
+
+SoftwareSerial tempSerial(17, 16); //? 定义了RX, TX,最好不要用16和17
+
+/// 以下是中心浇水控制器需要的参数
+Ticker tk;
+StaticJsonDocument<200> doc;
+WiFiClient client;
+struct tm timeinfo;
+struct tm NET_LOSTING_time;
+struct tm start_work_time;
+int Solenoid_Pin[3] = {27, 26, 25};      // 电磁阀使用的引脚,19\32代表菜地和最外面,有些是否浇菜地\北边围墙在后面的loop\send2client中做了index的强关联,如果此数组变化了,也要修改一下
+int pin_watering_time[3] = {30, 30, 30}; // 每个引脚浇水的时间
+int working_solenoid_valve[3] = {0, 0, 0};   // 增加电磁阀记得修改数组长度!!!!
+int Pump_pin = 18;                                          // 水泵使用的引脚
+int auto_soil_watering_flag = 1;                            // 到达一定湿度再浇水的flag
+int auto_timing_watering_flag = 0;                          // 按照时间进行浇水的引脚
+
+int ota_status = 0;
+String ota_feedback = "";
+
+int physical_buttons = 0; // 通过这个来判断是否需要物理按钮
+
+int carwash_flag = 0;
+int hand_watering_flag = 0;
+int pump_working_flag = 0;
+int vegetable_flag_hand = 0;
+int vegetable_flag_net = 0;
+int pool_watering_flag = 0;
+int net_solenoid_flag = 0; // 网络下发数字启动电磁阀标志，用于10分钟超时保护
+// int car_wash_trigger_pin = 21;   // 手动洗车开关
+// int hand_water_trigger_pin = 22; // 手动浇水开关
+// int vegetable_knob_pin = 23;     // 菜地旋钮
+// volatile int solenoid_valve4 = 0;
+int trigger_pin_status;
+
+int reboot_flag = 0;
+String time_status = "";
+int solenoid_line = 0;
+// volatile int which2debug_num = 0; //正在debug的电磁阀的序号,可能不需要这个变量了
+float soil_moisture = 0;
+float soil_moisture_need = 32; // 最低土壤湿度
+// float soil_moisture_history_avg;
+int soil_moisture_test_maxsize = 777; // 这个数值不能太大,否则会导致一次太干,但是浇完水还是没啥反应.
+int soil_moisture_list_size = 0;
+// int *time_flag = new int(0);  //必须这样做否则没法delete
+int work_times = 0;
+int wat_begin_hour = 4;
+int wat_begin_min = 40;
+int soil2wat = 0; // 如果是这个状态代表因为土壤干燥正在浇水
+// int pinled = 32;
+// const char *ssid = "family_2.4g";
+// const char *password = "13505795150";
+const char *ssid = "TP-LINK_04F926";
+const char *password = "qsh82570079";
+const char *host = "tcp.tlink.io";
+const uint16_t httpPort = 8647;
+unsigned long BEGIN_TIMESTAMP = 0; // 处理millis的返回时间,起点
+// unsigned long END_TIMESTAMP=0;//处理millis()记录的另外一个时间,终点
+bool NET_LOSTING_FLAG = false;
+bool time_to_go_flag = false;
+bool soil_to_go_flag = false;
+unsigned long wifiReconnectTimer = 0;
+unsigned long clientReconnectTimer = 0;
+const unsigned long wifiRetryInterval = 300;   // WiFi 连接重试间隔（毫秒）
+const unsigned long clientRetryInterval = 500; // 服务器连接重试间隔（毫秒）
+int time_gap_min = 0;                          // 浇水的时间是否已经达到要求？
+// const char *device_id = "R6P6K29X5PW1L607";// fixme:这个是测试组
+const char *device_id = "7DV2YM9V6REVG96N";
+//
+/* 这些是设置时间的代码,但是现在被换为阿里云了
+const char *ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = 4 * 3600;     //不知道为何是4*60*60
+const int daylightOffset_sec = 4 * 3600; //不知道为何是4*60*60
+*/
+int i = 0;
+int wifi_retry_times = 0;
+int wifi_to_reboot_times = 0;
+// int led_switch = 0;
+int breakpoint_flag = 1; // 23333这个是控制断点的,不是time_flag
+char data[64];           // 回传的一大条数据都在里面，注意数据长度
+char time_temp[10];
+char set_begin_time[10];
+//****************************************************************以下是OTA远程升级代码
+// 当升级开始时，打印日志
+void update_started()
+{
+    Serial.println("CALLBACK:  HTTP update process started");
+}
+
+// 当升级结束时，打印日志
+void update_finished()
+{
+    Serial.println("CALLBACK:  HTTP update process finished");
+}
+
+// 当升级中，打印日志
+void update_progress(int cur, int total)
+{
+    Serial.printf("CALLBACK:  HTTP update process at %d of %d bytes...\n", cur, total);
+}
+
+// 当升级失败时，打印日志
+void update_error(int err)
+{
+    Serial.printf("CALLBACK:  HTTP update fatal error code %d\n", err);
+}
+
+/**
+ * 固件升级函数
+ * 在需要升级的地方，加上这个函数即可，例如setup中加的updateBin();
+ * 原理：通过http请求获取远程固件，实现升级
+ */
+void updateBin()
+{
+    Serial.println("start update");
+    WiFiClient UpdateClient;
+
+    // 如果是旧版esp32 SDK，需要删除下面四行，旧版不支持，不然会报错
+    //...看来我是旧版本esp32.。。23333333
+    //   httpUpdate.onStart(update_started);//当升级开始时
+    //   httpUpdate.onEnd(update_finished);//当升级结束时
+    //   httpUpdate.onProgress(update_progress);//当升级中
+    //   httpUpdate.onError(update_error);//当升级失败时
+
+    t_httpUpdate_return ret = httpUpdate.update(UpdateClient, upUrl);
+    switch (ret)
+    {
+    case HTTP_UPDATE_FAILED: // 当升级失败
+        Serial.println("[update] Update failed.");
+        ota_feedback = "[update] Update failed.";
+        break;
+    case HTTP_UPDATE_NO_UPDATES: // 当无升级
+        Serial.println("[update] Update no Update.");
+        ota_feedback = "[update] Update no Update.";
+        break;
+    case HTTP_UPDATE_OK: // 当升级成功
+        Serial.println("[update] Update ok.");
+        ota_feedback = "[update] Update ok.";
+        break;
+    }
+}
+//***************************************************************OTA远程升级代码结束
+
+void time_fun()
+
+{ // 中断之后跳到这里来，不要搞的太复杂
+    breakpoint_flag = 1;
+}
+String fenge(String str, String fen, int index)
+{
+    int weizhi;
+    String temps[str.length()];
+    int i = 0;
+    do
+    {
+        weizhi = str.indexOf(fen);
+        if (weizhi != -1)
+        {
+            temps[i] = str.substring(0, weizhi);
+            str = str.substring(weizhi + fen.length(), str.length());
+            i++;
+        }
+        else
+        {
+            if (str.length() > 0)
+                temps[i] = str;
+        }
+    } while (weizhi >= 0);
+
+    if (index > i)
+        return "-1";
+    return temps[index];
+}
+
+template <class T>
+int length(T &arr)
+{
+
+    // cout << sizeof(arr[0]) << endl;
+    // cout << sizeof(arr) << endl;
+    return sizeof(arr) / sizeof(arr[0]);
+}
+void send2clinet()
+{
+    int field_t = 0;
+    int corner_t = 0;
+    sprintf(set_begin_time, "%d:%d", wat_begin_hour, wat_begin_min); // 回传+读取
+
+    if (1 == ota_status)
+    {
+        time_status = ota_feedback; // 如果有在更新，则收到的升级反馈会显示在物联网平台中的时间框框
+    }
+    if (pin_watering_time[6] > 0)
+    { // 这里也要修改引脚!!!
+        field_t = 1;
+    }
+    else
+    {
+        field_t = 0;
+    }
+    if (pin_watering_time[4] > 0)
+    {
+        corner_t = 1;
+    }
+    else
+    {
+        corner_t = 0;
+    }
+    sprintf(data, "#%d*%d*%d*%d*%d*%f*%d*%s*%d*%f*%d*%s*%d*%d*%d#",
+         solenoid_line, carwash_flag, auto_soil_watering_flag, auto_timing_watering_flag,hand_watering_flag, soil_moisture, pump_working_flag, time_status, reboot_flag, soil_moisture_need, pin_watering_time[0], set_begin_time,  ota_status,0, physical_buttons);
+    // unsigned
+    // sprintf(data, "#1*%d*%d*%d*%d*%d#", carwash_flag, auto_watering_flag, hand_watering_flag, soil_moisture, pump_working_flag);
+    Serial.print("回送的数据为：");
+    Serial.println(data);
+    client.print(data);
+    // delay(2000);
+}
+// **非阻塞WiFi重连**
+void wifi_reconnect_cx()
+{
+    static unsigned long lastAttemptTime = 0;
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        wifi_retry_times = 0;
+        NET_LOSTING_FLAG = false;
+        return;
+    }
+
+    // 只有当超过设定时间间隔时才尝试连接
+    if (millis() - lastAttemptTime >= wifiRetryInterval)
+    {
+        lastAttemptTime = millis();
+        wifi_retry_times++;
+
+        if (wifi_retry_times < 150)
+        {
+            Serial.print(".");
+            // WiFi.begin(ssid, password); // 如果需要，可在此重新尝试连接WiFi
+        }
+        else
+        {
+            if (soil2wat == 1)
+            {
+                Serial.println("使用millis()进行猜测时间");
+                NET_LOSTING_FLAG = true;
+                NET_LOSTING_time = timeinfo;
+                BEGIN_TIMESTAMP = millis(); // 记录断网时间
+            }
+            else
+            {
+                wifi_to_reboot_times++;
+                if (wifi_to_reboot_times > 500)
+                {
+                    Serial.println("准备重启");
+                    ESP.restart();
+                }
+            }
+        }
+    }
+}
+
+// **非阻塞检测客户端（tlink服务器）连接**
+void check_client_connected()
+{
+    static unsigned long lastAttemptTime = 0;
+
+    if (client.connected() || WiFi.status() != WL_CONNECTED)
+    {
+        wifi_to_reboot_times = 0;
+        return;
+    }
+
+    // 只有当超过设定时间间隔时才尝试连接服务器
+    if (millis() - lastAttemptTime >= clientRetryInterval)
+    {
+        lastAttemptTime = millis();
+        wifi_retry_times++;
+
+        Serial.println("尝试重新连接服务器...");
+        client.connect(host, httpPort);
+
+        if (client.connected())
+        {
+            Serial.println("发送设备ID");
+            client.print(device_id);
+        }
+
+        if (wifi_retry_times > 20)
+        {
+            wifi_retry_times = 0;
+        }
+    }
+
+    if (!client.connected())
+    {
+        wifi_to_reboot_times++;
+        if (wifi_to_reboot_times > 500)
+        {
+            Serial.println("准备重启");
+            ESP.restart();
+        }
+    }
+}
+
+void pump_work()
+{
+    if (pump_working_flag == 1)
+    {
+        digitalWrite(Pump_pin, HIGH);
+        // pump_working_flag = 1; //不要写，指挥与执行分离
+    }
+    else
+    {
+        digitalWrite(Pump_pin, LOW);
+        //    pump_working_flag = 0;
+    }
+}
+void Solenoid_OffAll(int a = 0) // here are just flags,no electricity;just solenoids,no pump.
+{
+
+    // 输入的a不是index,而是人为的编号
+    solenoid_line = a;
+    hand_watering_flag = 0;
+    for (i = 0; i < length(Solenoid_Pin); i++)
+    {
+        if (a != 0 && i == a - 1)
+        {
+            working_solenoid_valve[a - 1] = 1;
+            continue;
+        }
+        working_solenoid_valve[i] = 0;
+    }
+}
+int time_gap(tm now, tm set)
+{ // 现在这个点和启动的时候的时差有多少?,返回分钟
+    if (now.tm_hour == set.tm_hour)
+    {
+        if (set.tm_min >= now.tm_min)
+        {
+            return set.tm_min - now.tm_min;
+        }
+        else
+        {
+            return now.tm_min - set.tm_min;
+        }
+    }
+    else if (now.tm_hour == set.tm_hour - 1)
+    {
+        return (60 - now.tm_min) + set.tm_min;
+    }
+    else if (now.tm_hour - 1 == set.tm_hour)
+    {
+        return (60 - set.tm_min) + now.tm_min;
+    }
+    else
+    {
+        return 24 * 60; // 代表一个很长的时间,24h*60min,即超出后面的时间区间范围
+    }
+}
+
+bool time_plus_check(int wat_begin_hour, int wat_begin_min, tm timeinfo)
+{                     //?这个gap不能超过30?不能让客户操作这个数值吗?
+    int time_2go = 7; // 在7分钟内必须进行反应
+    struct tm wat_begin;
+    wat_begin.tm_hour = wat_begin_hour;
+    wat_begin.tm_min = wat_begin_min;
+    if (time_gap(timeinfo, wat_begin) < time_2go)
+    {
+        Serial.println("reached the target timezone:Start");
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+void time_by_millis(unsigned long millis_second)
+{ // 通过millis()函数估计时间
+    timeinfo = NET_LOSTING_time;
+    // 时间转化为秒
+    timeinfo.tm_sec += millis_second / 1000;
+    if (timeinfo.tm_sec >= 60)
+    {
+        timeinfo.tm_min += 1;
+        timeinfo.tm_sec -= 60;
+        if (timeinfo.tm_min >= 60)
+        {
+            timeinfo.tm_hour += 1;
+            timeinfo.tm_min -= 60;
+            if (timeinfo.tm_hour >= 24)
+            {
+                timeinfo.tm_hour = 0;
+            }
+        }
+    }
+}
+
+// DeepSeek:修改 get_localtime 函数
+bool get_localtime()
+{
+    if (!getLocalTime(&timeinfo))
+    { // 尝试获取网络时间失败
+        if (!NET_LOSTING_FLAG)
+        { // 首次进入断网状态
+            NET_LOSTING_FLAG = true;
+            NET_LOSTING_time = timeinfo; // 记录断网时的准确时间
+            BEGIN_TIMESTAMP = millis();  // 记录断网时刻的 millis()
+        }
+        // 使用 millis() 推算当前时间
+        unsigned long elapsed = millis() - BEGIN_TIMESTAMP;
+        timeinfo = NET_LOSTING_time;
+        timeinfo.tm_sec += elapsed / 1000;
+
+        // 规范化时间结构
+        mktime(&timeinfo); // 自动处理溢出（如秒转分钟等）
+    }
+    else
+    {
+        NET_LOSTING_FLAG = false; // 网络恢复
+    }
+
+    // 更新状态显示
+    sprintf(time_temp, "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
+    time_status = String(time_temp);
+    return true;
+}
+
+// bool get_starttime(){
+
+// }
+
+bool time2go()
+{
+    if (auto_timing_watering_flag == 1)
+    {
+        if (work_times > 0 || soil2wat == 1)
+        { // 如果手头上还有工作先做掉
+            return true;
+        }
+        if (get_localtime())
+        {
+            if (pump_working_flag == 0)
+            {
+                Serial.print("in ttg");
+                Serial.print(pump_working_flag);
+                // if (timeinfo.tm_hour > wat_begin_hour && timeinfo.tm_min < wat_begin_min)//fixme:做多次循环的话这里还回来吗
+                if (time_plus_check(wat_begin_hour, wat_begin_min, timeinfo))
+                {
+                    pump_working_flag = 1;
+                    // *time_flag = millis();
+                    if (soil2wat == 0)
+                    {
+                        start_work_time = timeinfo;
+                        work_times = length(Solenoid_Pin);
+                        soil2wat = 1;
+                    }
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+// 状态定义
+#define STATE_IDLE 0          // 空闲状态
+#define STATE_OPEN_VALVE 1     // 正在打开阀门
+#define STATE_PUMP_ON 2        // 水泵已开启
+#define STATE_CLOSE_PUMP 3     // 正在关闭水泵
+#define STATE_CLOSE_VALVE 4    // 正在关闭阀门
+
+// 控制参数
+#define VALVE_DELAY 5000        // 阀门操作延迟时间(ms)
+
+// 全局变量
+int current_state = STATE_IDLE;
+unsigned long state_start_time = 0;
+
+void flag_execute() // 这个函数只负责给电,不负责别的操作
+{
+    Serial.print("fle");
+    Serial.print(pump_working_flag);
+    Serial.print(" state:");
+    Serial.println(current_state);
+    
+    switch(current_state)
+    {
+        case STATE_IDLE:
+            if (pump_working_flag == 1)
+            {
+                // 开始打开阀门
+                current_state = STATE_OPEN_VALVE;
+                state_start_time = millis();
+                
+                // 打开需要工作的电磁阀
+                for (i = 0; i < length(working_solenoid_valve); i++)
+                {
+                    if (working_solenoid_valve[i] == 1)
+                    {
+                        digitalWrite(Solenoid_Pin[i], HIGH);
+                        solenoid_line = i + 1; // 处理上报的正在工作的电磁阀
+                        Serial.print("HIGH");
+                        Serial.println(i);
+                    }
+                    else
+                    {
+                        digitalWrite(Solenoid_Pin[i], LOW);
+                        Serial.print("LOW");
+                        Serial.println(i);
+                    }
+                }
+            }
+            break;
+            
+        case STATE_OPEN_VALVE:
+            // 等待阀门完全打开
+            if (millis() - state_start_time >= VALVE_DELAY)
+            {
+                // 打开水泵
+                pump_work();
+                current_state = STATE_PUMP_ON;
+            }
+            break;
+            
+        case STATE_PUMP_ON:
+            if (pump_working_flag == 0)
+            {
+                // 开始关闭水泵
+                current_state = STATE_CLOSE_PUMP;
+                state_start_time = millis();
+                pump_work(); // 关闭水泵
+            }
+            else
+            {
+                // 检查电磁阀状态是否需要更新
+                static int last_working_valve = -1;
+                static int valve_switch_state = 0; // 0: 正常状态, 1: 正在切换
+                static unsigned long switch_start_time = 0;
+                int current_working_valve = -1;
+                
+                // 找到当前工作的电磁阀
+                for (i = 0; i < length(working_solenoid_valve); i++)
+                {
+                    if (working_solenoid_valve[i] == 1)
+                    {
+                        current_working_valve = i;
+                        break;
+                    }
+                }
+                
+                // 处理电磁阀切换
+                if (valve_switch_state == 0)
+                {
+                    // 如果电磁阀状态发生变化，开始切换过程
+                    if (current_working_valve != last_working_valve && last_working_valve != -1)
+                    {
+                        // 同时打开两个阀门
+                        digitalWrite(Solenoid_Pin[last_working_valve], HIGH);
+                        if (current_working_valve != -1)
+                        {
+                            digitalWrite(Solenoid_Pin[current_working_valve], HIGH);
+                            solenoid_line = current_working_valve + 1; // 处理上报的正在工作的电磁阀
+                        }
+                        else
+                        {
+                            solenoid_line = 0;
+                        }
+                        
+                        // 开始切换计时
+                        valve_switch_state = 1;
+                        switch_start_time = millis();
+                        Serial.println("开始切换电磁阀");
+                    }
+                    else if (current_working_valve != last_working_valve)
+                    {
+                        // 首次启动或从无到有，直接打开新阀门
+                        // 关闭所有电磁阀
+                        for (i = 0; i < length(working_solenoid_valve); i++)
+                        {
+                            digitalWrite(Solenoid_Pin[i], LOW);
+                        }
+                        
+                        // 打开当前工作的电磁阀
+                        if (current_working_valve != -1)
+                        {
+                            digitalWrite(Solenoid_Pin[current_working_valve], HIGH);
+                            solenoid_line = current_working_valve + 1; // 处理上报的正在工作的电磁阀
+                            Serial.print("HIGH");
+                            Serial.println(current_working_valve);
+                        }
+                        else
+                        {
+                            solenoid_line = 0;
+                        }
+                        
+                        last_working_valve = current_working_valve;
+                    }
+                }
+                else
+                {
+                    // 等待切换延迟时间
+                    if (millis() - switch_start_time >= VALVE_DELAY)
+                    {
+                        // 关闭之前的阀门
+                        digitalWrite(Solenoid_Pin[last_working_valve], LOW);
+                        Serial.print("LOW");
+                        Serial.println(last_working_valve);
+                        
+                        // 完成切换
+                        valve_switch_state = 0;
+                        last_working_valve = current_working_valve;
+                        Serial.println("电磁阀切换完成");
+                    }
+                }
+            }
+            break;
+            
+        case STATE_CLOSE_PUMP:
+            // 等待水泵完全停止
+            if (millis() - state_start_time >= VALVE_DELAY)
+            {
+                // 开始关闭阀门
+                current_state = STATE_CLOSE_VALVE;
+                state_start_time = millis();
+                solenoid_line = 0;
+                
+                // 关闭所有电磁阀
+                for (i = 0; i < length(working_solenoid_valve); i++)
+                {
+                    digitalWrite(Solenoid_Pin[i], LOW);
+                }
+            }
+            break;
+            
+        case STATE_CLOSE_VALVE:
+            // 等待阀门完全关闭
+            if (millis() - state_start_time >= VALVE_DELAY)
+            {
+                // 回到空闲状态
+                current_state = STATE_IDLE;
+            }
+            break;
+    }
+}
+float getTemp(String temp)
+{
+    int commaPosition = -1;
+    String info[9]; // 用字符串数组存储
+    for (int i = 0; i < 9; i++)
+    {
+        commaPosition = temp.indexOf(',');
+        if (commaPosition != -1)
+        {
+            info[i] = temp.substring(0, commaPosition);
+            temp = temp.substring(commaPosition + 1, temp.length());
+        }
+        else
+        {
+            if (temp.length() > 0)
+            { // 最后一个会执行这个
+                info[i] = temp.substring(0, commaPosition);
+            }
+        }
+    }
+    return (info[3].toInt() * 256 + info[4].toInt()) / 10.00; ////这里传回的是一个整数,我们需要小数
+}
+
+void soil_moisture_into_list(float soil_m)
+{
+    // 将土壤湿度写入到数组中,防止其对土壤变化太敏感
+    // 但是会导致你把传感器拔出来之后,仍然一直有显示土壤湿度:正确的应该是把检测器放到水里
+    if (0 != soil_m) // 这里不只是等于0要排除,而且数值超过10%都要排除!!!!
+    {
+        if (soil_moisture_list_size < soil_moisture_test_maxsize)
+        {
+            soil_moisture_list_size += 1;
+        }
+        soil_moisture = (soil_moisture * (soil_moisture_list_size - 1)) / soil_moisture_list_size + soil_m / soil_moisture_list_size;
+    }
+}
+
+void check_soil() // 检测土壤湿度
+{
+    // delay(500); // 放慢输出频率
+    for (int i = 0; i < 8; i++)
+    {                              // 发送测温命令
+        tempSerial.write(item[i]); // write输出
+        // Serial.println("正在写入TX数据");
+        // Serial.println(item[i]);
+    }
+    delay(100); // 等待测温数据返回
+    data_soil = "";
+    while (tempSerial.available())
+    { // 从串口中读取数据
+        // 这里读不出数据
+        unsigned char in = (unsigned char)tempSerial.read(); // read读取
+        // Serial.print(in, HEX);
+        // Serial.print(',');
+        data_soil += in;
+        data_soil += ',';
+    }
+
+    if (data_soil.length() > 0)
+    { // 先输出一下接收到的数据
+        // Serial.println();
+        // Serial.println(data);
+        soil_moisture_into_list(getTemp(data_soil));
+        Serial.print(soil_moisture);
+        Serial.println("%water");
+    }
+}
+
+////需要再写一个判断土壤湿度是否适宜的程序,也从网上读取参数
+bool soil_go()
+{
+    check_soil();
+    if (soil2wat == 1 || work_times > 0)
+    {                // 表示目前水还在浇水
+        return true; //?这样写对吗
+        Serial.println("1");
+    }
+    if (soil_moisture_need > soil_moisture && auto_soil_watering_flag == 1 && soil_moisture != 0) // 还要判断一下土壤湿度是不是没有正常返回回来
+    {
+        pump_working_flag = 1;
+        // *time_flag = millis();
+        if (soil2wat == 0)
+        {
+            work_times = length(Solenoid_Pin);
+            soil2wat = 1;
+            start_work_time = timeinfo;
+        }
+        Serial.println("2");
+        return true;
+    }
+    else
+    {
+        // pump_working_flag = 0;这样写有很大的问题!
+        Serial.println("3");
+        return false;
+    }
+}
+
+bool go_watering()
+{
+    time_to_go_flag = time2go();
+    soil_to_go_flag = soil_go();
+
+    if (time_to_go_flag && auto_timing_watering_flag)
+    { // 时间到了
+        return true;
+    }
+    else if (soil_to_go_flag && auto_soil_watering_flag)
+    { // 干湿度达标了
+        return true;
+    }
+    else if (1 == hand_watering_flag)
+    {
+        return true; // 收到了手动浇水的指令
+    }
+    else
+    {
+        return false;
+    }
+}
+
+void shut_all()
+{ // //做一个关闭所有正在进行状态的东西,避免如正在自动浇水的时候打开carwash的情况
+    pump_working_flag = 0;
+    soil2wat = 0;
+    Solenoid_OffAll(0);
+    Serial.println("shut_all()被执行了");
+    work_times = 0;
+    net_solenoid_flag = 0; // 重置网络下发电磁阀标志
+}
+
+// 再写一个把正在工作的电磁阀放到一个数组中收集好的函数
+// 要写一个多少时间后就自动关闭的功能，以方万一啊忘记关了
+// ↑ done
+
+bool lower_noise(int pin_to_listen, int pin_status_wanted)
+{
+    int score = 0;
+    int test_times = 10; // 总共测试次数
+
+    for (int i = 0; i < test_times; i++)
+    {
+        trigger_pin_status = digitalRead(pin_to_listen);
+        // Serial.print("此处的引脚电平");
+        Serial.print(trigger_pin_status);
+        if (trigger_pin_status == pin_status_wanted)
+        { // 由于input_pullup的出现,导致了相关行为的反转!!!
+            score = score + 1;
+        }
+        delay(77); // 这里需要采样吗？
+    }
+    if (score > 9)
+    { // 这里修改得分！！！
+        Serial.println("启动");
+        return true;
+    }
+    else
+    {
+        Serial.println("未启动");
+        return false;
+    }
+}
+// 关闭此功能
+//  void physical_listener()
+//  { // 指对现实世界的开关动作进行追踪+降低噪音
+//      // trigger_pin_status = digitalRead(car_wash_trigger_pin);
+//      Serial.print("carwash电平");
+//      // Serial.println(trigger_pin_status);
+
+//     if (lower_noise(car_wash_trigger_pin, HIGH))
+//     {
+//         Serial.println("高电平洗车启动");
+//         shut_all();
+//         carwash_flag = 1;
+//         Serial.print("carwash_flag=");
+//         Serial.println(carwash_flag);
+//         Solenoid_OffAll(0);    // 无论如何，都把所有的都给关上
+//         pump_working_flag = 1; // do not use 'delay'
+//         // carwash应该启动的时候禁止使用别的浇水!
+//         start_work_time = timeinfo;
+//     }
+
+//     // trigger_pin_status = digitalRead(hand_water_trigger_pin);
+//     Serial.print("手动浇水电平");
+//     // Serial.println(trigger_pin_status);
+//     if (lower_noise(hand_water_trigger_pin, HIGH))
+//     {
+//         shut_all();
+//         pump_working_flag = 1;
+//         hand_watering_flag = 1;
+//         start_work_time = timeinfo;
+//         work_times = 7;
+//     }
+//     // //这里的代码在没有得到田里的参数时候不能测,会有问题
+//     // //是否在执行层,只对pin的好低电平进行检测,而代表flag
+
+//     Serial.print("菜地电平");
+//     if (lower_noise(vegetable_knob_pin, HIGH))
+//     { // 由于input_pullup的出现,导致了相关行为的反转!!!
+//         vegetable_flag_hand = 1;
+//         pump_working_flag = 1; // 打开泵,记录flag
+//         Solenoid_OffAll(7);
+//         start_work_time = timeinfo;
+//     }
+//     else
+//     {
+//         if (1 == vegetable_flag_hand)
+//         {
+//             shut_all();
+//         }
+//         vegetable_flag_hand = 0;
+//     }
+// }
+
+void setup()
+{
+    // put your setup code here, to run once:
+    tempSerial.begin(4800);
+    Serial.begin(9600);
+    configTime(8 * 3600, 0, "ntp1.aliyun.com", "ntp2.aliyun.com");
+    // configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+    delay(10);
+    for (i = 0; i < length(Solenoid_Pin); i++)
+    {
+        pinMode(Solenoid_Pin[i], OUTPUT);
+        digitalWrite(Solenoid_Pin[i], LOW);
+    }
+    pinMode(Pump_pin, OUTPUT);
+    digitalWrite(Pump_pin, LOW);
+    // pinMode(car_wash_trigger_pin, INPUT);
+    // pinMode(hand_water_trigger_pin, INPUT);
+    // pinMode(vegetable_knob_pin, INPUT);
+    // pinMode(car_wash_trigger_pin, INPUT_PULLDOWN);
+    // pinMode(hand_water_trigger_pin, INPUT_PULLDOWN);
+    // pinMode(vegetable_knob_pin, INPUT_PULLDOWN);
+    // 取消此功能
+    //  若在设置种设置按钮输入功能打开,设置输入上拉
+    //  if(physical_buttons){
+    //  pinMode(car_wash_trigger_pin, INPUT_PULLUP);
+    //  pinMode(hand_water_trigger_pin, INPUT_PULLUP);
+    //  pinMode(vegetable_knob_pin, INPUT_PULLUP);
+    //  }
+
+    // todo:以后可以考虑加入一个开关，来保证esp32挂机的时候仍然可以手动启动水泵！！！！！
+    // 加入时间、wifi校验显示位置
+    //  We start by connecting to a WiFi network
+
+    Serial.println();
+    Serial.println();
+    Serial.print("Connecting to ");
+    Serial.println(ssid);
+
+    WiFi.begin(ssid, password);
+    wifi_reconnect_cx();
+    // while (WiFi.status() != WL_CONNECTED)
+    // {
+    //     delay(500);
+    //     Serial.print(".");
+    // }
+    // while (WiFi.status() != WL_CONNECTED)
+    // {
+    //     wifi_retry_times += 1;
+    //     if (wifi_retry_times >= 0 && wifi_retry_times <150)
+    //     {
+    //         // WiFi.begin(ssid, password);
+    //         Serial.print(".");
+    //     }
+    //     else
+    //     {
+    //         Serial.println("准备重启");
+    //         ESP.restart();
+    //     }
+    //     delay(300);
+    // }
+    wifi_retry_times = 0;
+    Serial.println("");
+    Serial.println("WiFi connected");
+    Serial.println("IP address: ");
+    Serial.println(WiFi.localIP());
+    Serial.print("connecting to ");
+    Serial.print(host);
+    Serial.print(':');
+    Serial.println(httpPort);
+    // init and get the time
+    // Use WiFiClient class to create TCP connections
+    client.print("执行第一次空中升级,我爱你,就像你爱我一样");
+    if (!client.connect(host, httpPort))
+    {
+        Serial.println("connection failed");
+        delay(5000);
+    }
+    else
+    {
+        Serial.println("connection sucess!");
+        tk.attach(40, time_fun); // s,中断服务函数，告诉你中断之后要跑到哪里去工作
+        Serial.println("send device_id");
+        client.print(device_id);
+    } // 设置这个中断而不是用delay的好处在于，中断之后改变flag，达到处理的目的
+    // 同时，对于整个函数，还是处于监听的状态，而不是像delay一样全部都停止了
+}
+void loop()
+{
+    /*
+    修改:
+    当还在浇水的时候,如果网络断开了,应当:
+    1.开启millis(),确认时间--->修改gettime()函数,仍然返回真值
+    2.仍然继续与wifi\tlink服务器呼叫,但是不重启
+    3.通过gettime()继续推进浇水序号
+
+    完成浇水后(抑或是还没浇水前):
+    继续重新连,如果实在不行,就可以重启?
+    或:继续通过millis校准时间,实在是太久了,如几个小时未重连,就重启
+
+    */
+    // todo:1.将代码移植到带天线的esp32上
+    // 2.增加几个开关,用于离线控制
+    wifi_reconnect_cx();
+    check_client_connected();
+    get_localtime();
+    // Serial.println(pump_working_flag);
+    // Serial.println(type(pump_working_flag));
+    if (1 == breakpoint_flag)
+    {
+        if (client.connected())
+        {
+            // Serial.println("send device_id");
+            // client.print(device_id); /*指定设备id*/
+            //                         //这个函数指的不是print，而是发送！
+            Serial.println("send heart beat sense");
+            client.print("q");
+        }
+        breakpoint_flag = 0;
+    }
+    if (client.available()) // 别把语句写到if与else这些东西之间
+    {                       /*接收数据，client.available()这个函数是指服务器有数据回传*/
+        Serial.print("available\n");
+        String ch = client.readString();
+        Serial.println(ch);
+        if (0 == ch.compareTo("A")) // 直接相等好像不大可以的
+        {
+            Serial.println("heart beat check\n");
+        }
+        else if (ch.lastIndexOf('%') != -1)
+        { // 读取你所需要的最低湿度
+            Serial.println("lowest wet check\n");
+            soil_moisture_need = ch.substring(0, ch.length() - 1).toFloat();
+        }
+        else if (ch.lastIndexOf('x') != -1)
+        { //! 读取你所需要的最少时间,小心字母重复!
+            // 输入分钟数量+x,如:25x
+            Serial.println("least time check\n");
+            for (int i = 0; i < length(pin_watering_time) - 1; i++)
+            { // 只修改数组的前几个，不修改最后一个代表浇菜的引脚
+                pin_watering_time[i] = ch.substring(0, ch.length() - 1).toInt();
+            }
+        }
+        else if (ch.lastIndexOf('v') != -1)
+        { // 应当输入5v31
+            Serial.println("began time check\n");
+            wat_begin_hour = fenge(ch, "v", 0).toInt();
+            wat_begin_min = fenge(ch, "v", 1).toInt();
+        }
+        else if (ch.toInt() <= length(Solenoid_Pin) && ch.toInt() >= 1) // 如果是数字的话，就开启的debug模式
+        {
+            Serial.println("which pump check\n");
+            pump_working_flag = 1; // 打开泵,记录flag
+            Solenoid_OffAll(ch.toInt());
+            soil2wat = 1; // 设置浇水标志，确保WiFi断开后能继续浇水
+            start_work_time = timeinfo; // 记录开始时间
+            work_times = 1; // 单个电磁阀模式，只浇一轮
+            net_solenoid_flag = 1; // 设置网络下发标志，启用10分钟超时保护
+            // Serial.print(working_solenoid_valve[0]);
+            // Serial.print(working_solenoid_valve[1]);
+            // Serial.println(working_solenoid_valve[2]);
+            // Serial.print("blo");
+            // Serial.print(pump_working_flag);
+        } //
+        // else if (0 == ch.toInt())
+        // {
+        //     shut_all();
+        // }
+        else
+        {
+            DeserializationError error = deserializeJson(doc, ch); // 将数据ch解析到doc中，然后在最后返回是解析成功与否
+            if (error)
+            {
+                Serial.println("解析错误！");
+            }
+            else if (doc.containsKey("carwash"))
+            { // 得到洗车的信号
+                shut_all();
+                carwash_flag = doc["carwash"];
+
+                Serial.print("carwash_flag=");
+                Serial.println(carwash_flag);
+
+                Solenoid_OffAll(0);    // 无论如何，都把所有的都给关上
+                pump_working_flag = 1; // do not use 'delay'
+                if (carwash_flag == 1) ////carwash应该启动的时候禁止使用别的浇水!
+                {
+                    // *time_flag = millis();
+                    start_work_time = timeinfo;
+                }
+                else
+                {
+                    carwash_flag = 0;
+                    shut_all();
+                }
+
+                /////////////////////////////////////////
+            }
+            else if (doc.containsKey("auto_soil"))
+            {
+                auto_soil_watering_flag = doc["auto_soil"]; // 设置好之后等待定时就好了
+                if (auto_soil_watering_flag == 0)
+                {
+                    shut_all();
+                }
+            }
+            else if (doc.containsKey("auto_timing"))
+            {
+                auto_timing_watering_flag = doc["auto_timing"]; // 设置好之后等待定时就好了
+                if (auto_timing_watering_flag == 0)
+                {
+                    shut_all();
+                }
+            }
+            else if (doc.containsKey("hand"))
+            {
+                hand_watering_flag = doc["hand"]; // 收到这个信号的时候代表我应该马上就需要浇水了
+                // Serial.print("inhand");
+                // Serial.print(hand_watering_flag);
+                if (hand_watering_flag == 1)
+                {
+                    //                     Serial.print("cnm");
+                    // Serial.print(pump_working_flag);
+                    pump_working_flag = 1;
+                    // *time_flag = millis();
+                    start_work_time = timeinfo;
+                    work_times = length(Solenoid_Pin);
+                }
+                else
+                {
+                    shut_all();
+                }
+            }
+            else if (doc.containsKey("field"))
+            { // 此代表菜地,所选择的英文单词中不能包含字母x或者v
+
+                vegetable_flag_net = doc["field"];
+                if (vegetable_flag_net == 1) ////carwash应该启动的时候禁止使用别的浇水!
+                {
+                    shut_all();
+                    pump_working_flag = 1;
+                    working_solenoid_valve[6] = 1; // 此时最后一个是代表田里的电磁阀
+                                                   // working_solenoid_valve[length(Solenoid_Pin) - 1] 不能这么用!
+                    start_work_time = timeinfo;
+                }
+                else
+                {
+                    shut_all();
+                }
+            }
+            else if (doc.containsKey("pool_2_wat")) // 如果数组中电磁阀又有变化,我就不再定义新变量了
+            {
+                pool_watering_flag = doc["pool_2_wat"];
+                if (pool_watering_flag == 1) ////carwash应该启动的时候禁止使用别的浇水!
+                {
+                    shut_all();
+                    pump_working_flag = 1;
+                    working_solenoid_valve[5] = 1; // 此时最后一个是代表田里的电磁阀
+                                                   // working_solenoid_valve[length(Solenoid_Pin) - 1] 不能这么用!
+                    start_work_time = timeinfo;
+                }
+                else
+                {
+                    shut_all();
+                }
+            }
+            else if (doc.containsKey("field_2_wat")) // 如果数组中电磁阀又有变化,我就不再定义新变量了
+            {
+                if (1 == doc["field_2_wat"])
+                {
+                    pin_watering_time[6] = 10;
+                }
+                else if (0 == doc["field_2_wat"])
+                {
+                    pin_watering_time[6] = 0;
+                }
+            }
+            else if (doc.containsKey("corner_2_wat"))
+            {
+                if (1 == doc["corner_2_wat"])
+                {
+                    pin_watering_time[4] = 20;
+                }
+                else if (0 == doc["corner_2_wat"])
+                {
+                    pin_watering_time[4] = 0;
+                }
+            }
+            // 取消此功能//////////////////
+            //  else if (doc.containsKey("physical_buttons"))
+            //  {
+            //      if(1==doc["physical_buttons"]){
+            //      physical_buttons=1;
+            //      Serial.println("上拉");
+            //          pinMode(car_wash_trigger_pin, INPUT_PULLUP);
+            //          pinMode(hand_water_trigger_pin, INPUT_PULLUP);
+            //          pinMode(vegetable_knob_pin, INPUT_PULLUP);
+            //      }
+            //      else if(0==doc["physical_buttons"]){
+            //      Serial.println("上拉取消,改为输出");
+            //          shut_all();
+            //          physical_buttons=0;
+            //              pinMode(car_wash_trigger_pin, OUTPUT);
+            //              pinMode(hand_water_trigger_pin, OUTPUT);
+            //              pinMode(vegetable_knob_pin, OUTPUT);
+            //      }
+            //  }
+            else if (doc.containsKey("shut"))
+            {
+                shut_all();
+            }
+            else if (doc.containsKey("ota_upload"))
+            {
+                ota_status = doc["ota_upload"];
+                if (1 == ota_status)
+                {
+                    updateBin();
+                }
+            }
+            else if (doc.containsKey("restart"))
+            {
+                reboot_flag = doc["restart"];
+                if (reboot_flag == 1)
+                {
+                    ESP.restart();
+                }
+            }
+        }
+        // 处理时间
+    }
+    // 这些好像和下面的代码矛盾了吧
+    //// if (auto_watering_flag == 1 && time2go())
+    ////     {
+    ////         pump_working_flag = 1;
+    ////         time_flag = millis();
+    ////         work_times = 3;
+    ////     }
+    // if(physical_buttons)
+    // {
+    // physical_listener(); // 对现在的按钮进行监听！！！
+    // }
+
+    Serial.println("******************");
+    Serial.print("pump_working_flag:");
+    Serial.println(pump_working_flag);
+    Serial.print("time2go():");
+    Serial.println(time2go()); // 返回1有可能是因为正在工作导致的soil2wat==1!
+    Serial.print("soil_go():");
+    Serial.println(soil_go()); // 返回1有可能是因为正在工作导致的soil2wat==1!
+    Serial.print("hand_watering_flag:");
+    Serial.println(hand_watering_flag);
+    Serial.print("vegetable_flag_net:");
+    Serial.println(vegetable_flag_net);
+    Serial.println("******************");
+
+    if (0 == carwash_flag && 0 == vegetable_flag_hand && 0 == vegetable_flag_net) // 此刻不在菜地浇水,也不在洗车
+    {
+        time_to_go_flag = time2go();
+        soil_to_go_flag = soil_go();
+        if (go_watering()) // 是时候浇水了
+        // fixme:time2go可能需要再大一点；1.算好delay和time2go;2.做一个每天几次，或者上下午几次的东西
+        // 这里如果auto_watering_flag==1在前面,当其为0的时候time2go()和soil_go()不会执行了,所以应该放在后面
+        {
+            // if(1==hand_watering_flag && auto_watering_flag==1){
+            //     auto_watering_flag=999
+            // }
+            Serial.println("watt");
+            Serial.print("水泵正在工作吗:");
+            Serial.println(pump_working_flag);
+            if (pump_working_flag == 1)
+            {
+                if (work_times > 0)
+                {
+                    soil2wat = 1; // 代表此刻正在浇水
+                    for (i = 0; i < length(working_solenoid_valve); i++)
+                    {
+
+                        working_solenoid_valve[i] = 0;
+                    }
+
+                    working_solenoid_valve[(length(Solenoid_Pin) - work_times)] = 1; // 这里的先打开再关闭时无所谓的，因为只是一个flag，都在最后的地方可以操作
+
+                    // Serial.println(work_times);
+                    // Serial.println('else分界线');
+                }
+
+                // mid_time = time_flag - mid_time;
+                // *time_flag = millis();
+                // Serial.println(*time_flag);
+
+                Serial.print("和开始的时间相差分钟数:");
+                Serial.println(time_gap(timeinfo, start_work_time));
+                time_gap_min = time_gap(timeinfo, start_work_time);
+                if (time_gap_min > pin_watering_time[(length(Solenoid_Pin) - work_times)])
+                { ////这里是不是没有做减法?建议调试之后再操作这里
+
+                    work_times = work_times - 1;
+                    Serial.println("worktimes-1了");
+                    start_work_time = timeinfo;
+                }
+                Serial.print("在浇倒数第几轮:");
+                Serial.println(work_times);
+                if (work_times == 0) // 不能是-1否则会在最后一个引脚多执行一次
+                {
+                    shut_all();
+                    hand_watering_flag = 0;
+                    Serial.println("worktime等于0了");
+                }
+            }
+        }
+    }
+    else if (1 == carwash_flag) // 1 == carwash_flag
+    {
+        soil2wat = 1;
+        if (time_gap(timeinfo, start_work_time) > pin_watering_time[0])
+        {
+            shut_all();
+            carwash_flag = 0;
+        }
+    }
+    else if (1 == vegetable_flag_net || 1 == vegetable_flag_hand)
+    {
+        soil2wat = 1;
+        if (time_gap(timeinfo, start_work_time) > pin_watering_time[5])
+        {
+            shut_all();
+            vegetable_flag_net = 0;
+            vegetable_flag_hand = 0;
+        }
+    }
+    else if (1 == net_solenoid_flag) // 网络下发数字模式，10分钟超时保护
+    {
+        soil2wat = 1;
+        if (time_gap(timeinfo, start_work_time) > 10) // 超过10分钟自动关闭
+        {
+            Serial.println("网络下发电磁阀超时10分钟，自动关闭");
+            shut_all();
+            net_solenoid_flag = 0;
+        }
+    }
+    for (i = 0; i < length(working_solenoid_valve); i++)
+    {
+
+        Serial.print(working_solenoid_valve[i]);
+    }
+    check_soil(); //?也许不写在这里?写在一开始就检测湿度的地方?
+    delay(100);
+    get_localtime();
+    delay(100);
+    flag_execute();
+    delay(100);
+    send2clinet();
+    delay(1000); // don't flood remote service
+    // 不要用mills代替，否则感觉让他休息的目的都达不到了，就是要阻塞在这里起
+}
+
+你这个项目其实已经不是“Arduino小项目”了。
+
+你现在实际上是在做：
+
+一个小型工业灌溉控制器 HMI（人机界面）
+
+而你最大的瓶颈已经不是：
+
+GPIO
+继电器
+WiFi
+
+而是：
+
+“用户如何操作这个系统”
+
+这就是 UI / UX 问题。
+
+而且你现在换成：
+
+0.96 OLED
+EC11编码器
+3个按键
+ESP32
+
+其实非常适合做：
+
+工业设备式菜单
+
+你这块板子已经有：
+
+EC11_A
+EC11_B
+EC11_KEY
+
+还有：
+
+KEY1
+KEY2
+KEY3
+
+这已经非常豪华了。
+
+你甚至可以做出：
+
+“小PLC” 风格界面
+1. 你现在的代码最大的问题
+
+不是功能。
+
+而是：
+
+“状态散落”
+
+比如：
+
+pump_working_flag
+soil2wat
+work_times
+carwash_flag
+vegetable_flag_net
+hand_watering_flag
+
+已经开始：
+
+状态爆炸
+
+了。
+
+你现在还能控制。
+
+但一旦：
+
+增加菜单
+增加页面
+增加手动控制
+增加OTA
+增加WiFi配置
+
+代码会迅速失控。
+
+2. 你现在最应该做的事
+
+不是继续加功能。
+
+而是：
+
+重构成“页面+状态机”
+3. 0.96 OLED 最适合什么 UI？
+千万别做：
+一屏很多信息
+
+OLED 太小。
+
+最适合：
+
+“工业控制器式分层菜单”
+
+类似：
+
+[主页面]
+  ↓
+[控制]
+  ↓
+[参数]
+  ↓
+[系统]
+
+而不是：
+
+首页塞满全部信息
+4. 我推荐你的 UI 架构（非常适合你）
+一级：首页（状态页）
+
+这是默认页。
+
+只显示最重要信息
+
+例如：
+
+WiFi: OK
+Soil: 43%
+Pump: ON
+
+Valve: 2
+Mode: AUTO
+12:43
+
+这就是：
+
+设备运行态
+
+不要放菜单。
+
+不要放复杂内容。
+
+因为：
+
+90%时间用户只是“看设备有没有正常运行”
+
+5. 第二级：控制页
+
+旋钮进入。
+
+> Start Water
+  Stop All
+  Car Wash
+  Valve Test
+
+这是：
+
+动作页
+6. 第三级：参数页
+
+例如：
+
+> Soil Limit
+  Water Time
+  Start Time
+  Auto Timing
+
+进去后：
+
+Soil Limit
+32%
+
+旋钮调节。
+
+按下保存。
+
+7. 第四级：系统页
+
+例如：
+
+> WiFi
+  OTA
+  Restart
+  Version
+8. 你现在的输入设备其实非常够用了
+
+你现在：
+
+最好的控制逻辑
+
+是：
+
+操作	功能
+EC11旋转	上下移动
+EC11按下	确认
+KEY1	返回
+KEY2	快捷启动
+KEY3	紧急停止
+
+非常工业。
+
+非常合理。
+
+9. 为什么我不建议你用“左右翻页”
+
+因为：
+
+OLED 太小。
+
+而且：
+
+你系统状态很多。
+
+工业设备里：
+
+“列表菜单”
+
+永远效率最高。
+
+10. 你真正应该展示什么
+
+很多人会犯错：
+
+“什么都想显示”
+
+结果：
+
+CPU
+IP
+RSSI
+Heap
+Soil
+Time
+Valve
+...
+
+全部塞爆。
+
+其实用户真正关心：
+
+只有3件事
+（1）系统是不是正常
+
+显示：
+
+WiFi OK
+Time OK
+AUTO
+（2）现在在干嘛
+
+显示：
+
+PUMP ON
+VALVE 2
+（3）什么时候结束
+
+显示：
+
+Remain: 12m
+
+或者：
+
+Target: 40%
+Now: 32%
+11. 你特别适合做“页面状态机”
+
+你现在代码里：
+
+STATE_IDLE
+STATE_OPEN_VALVE
+STATE_PUMP_ON
+
+这个其实已经很好了。
+
+你应该：
+
+把 UI 也状态机化
+
+例如：
+
+enum UiPage
+{
+    PAGE_HOME,
+    PAGE_MENU,
+    PAGE_CONTROL,
+    PAGE_SETTING,
+    PAGE_WIFI,
+    PAGE_INFO
+};
+
+然后：
+
+UiPage currentPage;
+12. 你的代码应该分层
+
+你现在最大的问题：
+
+所有逻辑全在 loop()
+
+这是后期一定崩的。
+
+13. 你现在应该拆成：
+main.cpp
+
+ui/
+  display.cpp
+  menu.cpp
+
+control/
+  relay.cpp
+  watering.cpp
+  pump.cpp
+
+sensor/
+  soil.cpp
+
+network/
+  wifi.cpp
+  ota.cpp
+  tlink.cpp
+
+system/
+  config.cpp
+  storage.cpp
+
+否则：
+
+半年后你自己都看不懂。
+
+14. 你的 OLED 最适合的 UI 风格
+我强烈推荐：
+“列表 + 高亮”
+
+类似：
+
+> Manual Water
+  Auto Water
+  Settings
+  System
+
+进入：
+
+> Valve1
+  Valve2
+  Valve3
+
+再进入：
+
+Valve1
+Time: 30m
+[START]
+
+这是：
+
+最成熟的工业逻辑
+15. 不要做动画
+
+很多人喜欢：
+
+滑动动画
+fancy UI
+
+但：
+
+ESP32 + OLED：
+
+动画会让操作变慢
+
+工业设备最重要：
+
+响应快
+16. 你特别适合加：
+“快捷页”
+
+例如：
+
+KEY2：
+
+直接：
+
+快速浇水
+
+KEY3：
+
+全部停止
+
+这样：
+
+即使：
+
+OLED坏了
+UI卡了
+
+也能紧急操作。
+
+这非常工业。
+
+17. 你这个系统真正应该怎么设计
+
+我建议：
+
+页面层
+
+只负责：
+
+显示
+输入
+菜单
+控制层
+
+只负责：
+
+浇水逻辑
+硬件层
+
+只负责：
+
+GPIO
+74HC595
+ADC
+18. 你现在最危险的问题
+
+是：
+
+“逻辑和硬件耦合”
+
+比如：
+
+digitalWrite(...)
+
+到处都是。
+
+未来：
+
+你已经不是 GPIO 直控了。
+
+现在：
+
+是 74HC595
+
+所以你必须：
+
+抽象
+
+例如：
+
+relaySet(1,true);
+pumpSet(true);
+
+不要：
+
+digitalWrite(...)
+
+到处写。
+
+19. 我建议你下一步直接这么干
+第一阶段
+
+先把：
+
+继电器层
+
+抽象掉。
+
+第二阶段
+
+做：
+
+OLED UI
+
+只做：
+
+首页
+菜单
+设置页
+
+别一次做复杂。
+
+第三阶段
+
+把你现在：
+
+loop()
+
+里面的：
+
+浇水逻辑
+网络逻辑
+显示逻辑
+输入逻辑
+
+拆开。
+
+20. 你这个项目已经很适合：
+FreeRTOS
+
+例如：
+
+任务	周期
+uiTask	50ms
+sensorTask	1s
+wateringTask	500ms
+networkTask	100ms
+oledTask	100ms
+
+ESP32 非常适合。
+
+21. 你这个设备最终会长成什么
+
+其实已经是：
+
+智能灌溉控制终端
+
+了。
+
+甚至：
+
+MQTT
+HomeAssistant
+Web配置
+Modbus RTU
+OTA
+LoRa Mesh
+
+都很自然。
+
+你现在已经过了“玩具阶段”。
+
+已经进入：
+
+“嵌入式系统设计”
+
+阶段了。
