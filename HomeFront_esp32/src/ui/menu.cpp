@@ -209,6 +209,10 @@ static void handle_control_select()
                 start_work_time = timeinfo;
                 soil2wat = 1;
             }
+            else
+            {
+                show_msg("请先打开阀门", PAGE_CONTROL, cursor);
+            }
         }
     }
 }

@@ -2,6 +2,7 @@
 #include "globals.h"
 #include "watering.h"
 #include <HTTPUpdate.h>
+#include <esp_task_wdt.h>
 
 // 当升级开始时，打印日志
 void update_started()
@@ -44,7 +45,10 @@ void updateBin()
     httpUpdate.onProgress(update_progress);
     httpUpdate.onError(update_error);
 
+    // OTA 下载+烧写可能超过 10 秒 WDT 超时, 临时解除当前任务监控
+    esp_task_wdt_delete(NULL);
     t_httpUpdate_return ret = httpUpdate.update(UpdateClient, upUrl);
+    esp_task_wdt_add(NULL);
     switch (ret)
     {
     case HTTP_UPDATE_FAILED:
