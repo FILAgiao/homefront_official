@@ -236,11 +236,11 @@ static void handle_mode_select()
     {
         case 0: // 定时浇水开关
             auto_timing_watering_flag = !auto_timing_watering_flag;
-            if (!auto_timing_watering_flag && !soil2wat) shut_all();
+            if (!auto_timing_watering_flag) shut_all();  // 关闭时强制停止, 防止灌溉卡住
             break;
         case 1: // 湿度浇水开关
             auto_soil_watering_flag = !auto_soil_watering_flag;
-            if (!auto_soil_watering_flag && !soil2wat) shut_all();
+            if (!auto_soil_watering_flag) shut_all();
             break;
         case 2: // 手动浇水
             shut_all();
