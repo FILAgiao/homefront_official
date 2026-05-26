@@ -2,6 +2,7 @@
 #include "globals.h"
 #include "ota.h"
 #include "watering.h"
+#include "config.h"
 #include <ArduinoJson.h>
 
 // 字符串分割函数: 按 fen 分隔 str, 取第 index 段
@@ -48,9 +49,10 @@ void send2clinet()
             hand_watering_flag, soil_moisture, pump_working_flag, time_status.c_str(),
             reboot_flag, soil_moisture_need, pin_watering_time[0], set_begin_time,
             ota_status, 0, physical_buttons);
-    Serial2.print("回送的数据为：");
-    Serial2.println(data);
-    client.print(data);
+    Serial.print("回送的数据为：");
+    Serial.println(data);
+    if (client.connected())
+        client.print(data);
 }
 
 // 处理收到的 TCP 消息, 分发到各命令
@@ -58,30 +60,34 @@ void handle_incoming_message(const String &ch)
 {
     if (0 == ch.compareTo("A"))
     {
-        Serial2.println("heart beat check\n");
+        Serial.println("heart beat check\n");
     }
     else if (ch.lastIndexOf('%') != -1)
     {
-        Serial2.println("lowest wet check\n");
-        soil_moisture_need = ch.substring(0, ch.length() - 1).toFloat();
+        Serial.println("lowest wet check\n");
+        soil_moisture_need = constrain(ch.substring(0, ch.length() - 1).toFloat(), 0.0f, 100.0f);
+        saveAllConfig();
     }
     else if (ch.lastIndexOf('x') != -1)
     {
-        Serial2.println("least time check\n");
+        Serial.println("least time check\n");
+        int v = constrain(ch.substring(0, ch.length() - 1).toInt(), 0, 120);
         for (int i = 0; i < valve_count; i++)
         {
-            pin_watering_time[i] = ch.substring(0, ch.length() - 1).toInt();
+            pin_watering_time[i] = v;
         }
+        saveAllConfig();
     }
     else if (ch.lastIndexOf('v') != -1)
     {
-        Serial2.println("began time check\n");
-        wat_begin_hour = fenge(ch, "v", 0).toInt();
-        wat_begin_min = fenge(ch, "v", 1).toInt();
+        Serial.println("began time check\n");
+        wat_begin_hour = constrain(fenge(ch, "v", 0).toInt(), 0, 23);
+        wat_begin_min  = constrain(fenge(ch, "v", 1).toInt(), 0, 59);
+        saveAllConfig();
     }
     else if (ch.toInt() <= valve_count && ch.toInt() >= 1)
     {
-        Serial2.println("which pump check\n");
+        Serial.println("which pump check\n");
         pump_working_flag = 1;
         Solenoid_OffAll(ch.toInt());
         soil2wat = 1;
@@ -95,15 +101,15 @@ void handle_incoming_message(const String &ch)
         DeserializationError error = deserializeJson(doc, ch);
         if (error)
         {
-            Serial2.println("解析错误！");
+            Serial.println("解析错误！");
         }
         else if (doc.containsKey("carwash"))
         {
             shut_all();
             carwash_flag = doc["carwash"];
 
-            Serial2.print("carwash_flag=");
-            Serial2.println(carwash_flag);
+            Serial.print("carwash_flag=");
+            Serial.println(carwash_flag);
 
             Solenoid_OffAll(0);
             pump_working_flag = 1;
@@ -120,6 +126,7 @@ void handle_incoming_message(const String &ch)
         else if (doc.containsKey("auto_soil"))
         {
             auto_soil_watering_flag = doc["auto_soil"];
+            saveAllConfig();
             if (auto_soil_watering_flag == 0)
             {
                 shut_all();
@@ -128,6 +135,7 @@ void handle_incoming_message(const String &ch)
         else if (doc.containsKey("auto_timing"))
         {
             auto_timing_watering_flag = doc["auto_timing"];
+            saveAllConfig();
             if (auto_timing_watering_flag == 0)
             {
                 shut_all();
@@ -166,6 +174,14 @@ void handle_incoming_message(const String &ch)
         else if (doc.containsKey("shut"))
         {
             shut_all();
+            // 远程紧急停止: 关闭所有自动模式, 防止立即重新触发
+            auto_timing_watering_flag = 0;
+            auto_soil_watering_flag = 0;
+            carwash_flag = 0;
+            vegetable_flag_hand = 0;
+            vegetable_flag_net = 0;
+            hand_watering_flag = 0;
+            saveAllConfig();
         }
         else if (doc.containsKey("ota_upload"))
         {

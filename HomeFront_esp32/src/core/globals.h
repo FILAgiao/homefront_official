@@ -72,6 +72,7 @@ extern int current_state;
 extern unsigned long state_start_time;
 
 // ---- 心跳/断点 ----
+extern void time_fun();          // Ticker 回调, 定义在 main.cpp
 extern volatile int breakpoint_flag;
 extern int wifi_retry_times;
 extern int wifi_to_reboot_times;

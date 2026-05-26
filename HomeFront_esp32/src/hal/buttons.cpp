@@ -3,8 +3,8 @@
 
 /*
  * 三按键输入
- * - KEY1=GPIO32, KEY2=GPIO33, KEY3=GPIO13
- * - 外部上拉 (按下 = LOW)
+ * - KEY1=GPIO4, KEY2=GPIO27, KEY3=GPIO33
+ * - 内部上拉 INPUT_PULLUP (按下 = LOW)
  * - 软件消抖 + 长按检测
  */
 
@@ -62,6 +62,8 @@ ButtonEvent button_get_event(int key_index)
         if (millis() - btn_press_start[key_index] >= long_press_ms)
         {
             btn_long_reported[key_index] = true;
+            Serial.print("[K"); Serial.print(key_index + 1);
+            Serial.println("L]");  // 长按 Long
             return BTN_LONG_PRESS;
         }
     }
@@ -73,6 +75,8 @@ ButtonEvent button_get_event(int key_index)
         // 如果长按已触发, 释放时不再报短按
         if (!btn_long_reported[key_index])
         {
+            Serial.print("[K"); Serial.print(key_index + 1);
+            Serial.println("]");  // 短按
             return BTN_PRESS;
         }
     }

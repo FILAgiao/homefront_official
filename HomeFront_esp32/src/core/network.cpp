@@ -18,15 +18,21 @@ void wifi_reconnect_cx()
         lastAttemptTime = millis();
         wifi_retry_times++;
 
+        // 每 15 次重试 (~4.5s) 触发一次 WiFi 重连
+        if (wifi_retry_times % 15 == 0)
+        {
+            WiFi.reconnect();
+        }
+
         if (wifi_retry_times < 150)
         {
-            Serial2.print(".");
+            Serial.print(".");
         }
         else
         {
             if (soil2wat == 1)
             {
-                Serial2.println("使用millis()进行猜测时间");
+                Serial.println("使用millis()进行猜测时间");
                 NET_LOSTING_FLAG = true;
                 NET_LOSTING_time = timeinfo;
                 BEGIN_TIMESTAMP = millis();
@@ -36,7 +42,7 @@ void wifi_reconnect_cx()
                 wifi_to_reboot_times++;
                 if (wifi_to_reboot_times > 500)
                 {
-                    Serial2.println("准备重启");
+                    Serial.println("准备重启");
                     ESP.restart();
                 }
             }
@@ -48,30 +54,42 @@ void wifi_reconnect_cx()
 void check_client_connected()
 {
     static unsigned long lastAttemptTime = 0;
+    static bool ticker_attached = false;
 
-    if (client.connected() || WiFi.status() != WL_CONNECTED)
+    if (client.connected())
     {
         wifi_to_reboot_times = 0;
+        if (!ticker_attached)
+        {
+            tk.attach(40, time_fun);
+            ticker_attached = true;
+            Serial.println("send device_id");
+            client.print(device_id);
+        }
+        return;
+    }
+
+    if (WiFi.status() != WL_CONNECTED)
+    {
         return;
     }
 
     if (millis() - lastAttemptTime >= clientRetryInterval)
     {
         lastAttemptTime = millis();
-        wifi_retry_times++;
 
-        Serial2.println("尝试重新连接服务器...");
+        Serial.println("尝试重新连接服务器...");
         client.connect(host, httpPort);
 
         if (client.connected())
         {
-            Serial2.println("发送设备ID");
+            Serial.println("TCP connected, sending device_id");
             client.print(device_id);
-        }
-
-        if (wifi_retry_times > 20)
-        {
-            wifi_retry_times = 0;
+            if (!ticker_attached)
+            {
+                tk.attach(40, time_fun);
+                ticker_attached = true;
+            }
         }
     }
 
@@ -80,7 +98,7 @@ void check_client_connected()
         wifi_to_reboot_times++;
         if (wifi_to_reboot_times > 500)
         {
-            Serial2.println("准备重启");
+            Serial.println("准备重启");
             ESP.restart();
         }
     }

@@ -1,29 +1,30 @@
 #include "ota.h"
 #include "globals.h"
+#include "watering.h"
 #include <HTTPUpdate.h>
 
 // 当升级开始时，打印日志
 void update_started()
 {
-    Serial2.println("CALLBACK:  HTTP update process started");
+    Serial.println("CALLBACK:  HTTP update process started");
 }
 
 // 当升级结束时，打印日志
 void update_finished()
 {
-    Serial2.println("CALLBACK:  HTTP update process finished");
+    Serial.println("CALLBACK:  HTTP update process finished");
 }
 
 // 当升级中，打印日志
 void update_progress(int cur, int total)
 {
-    Serial2.printf("CALLBACK:  HTTP update process at %d of %d bytes...\n", cur, total);
+    Serial.printf("CALLBACK:  HTTP update process at %d of %d bytes...\n", cur, total);
 }
 
 // 当升级失败时，打印日志
 void update_error(int err)
 {
-    Serial2.printf("CALLBACK:  HTTP update fatal error code %d\n", err);
+    Serial.printf("CALLBACK:  HTTP update fatal error code %d\n", err);
 }
 
 /**
@@ -33,7 +34,9 @@ void update_error(int err)
  */
 void updateBin()
 {
-    Serial2.println("start update");
+    Serial.println("start update");
+    // 升级期间主循环阻塞, 必须先关闭所有阀门水泵, 防止失控
+    shut_all();
     WiFiClient UpdateClient;
 
     // 如果是旧版esp32 SDK，需要删除下面四行，旧版不支持，不然会报错
@@ -46,15 +49,15 @@ void updateBin()
     switch (ret)
     {
     case HTTP_UPDATE_FAILED:
-        Serial2.println("[update] Update failed.");
+        Serial.println("[update] Update failed.");
         ota_feedback = "[update] Update failed.";
         break;
     case HTTP_UPDATE_NO_UPDATES:
-        Serial2.println("[update] Update no Update.");
+        Serial.println("[update] Update no Update.");
         ota_feedback = "[update] Update no Update.";
         break;
     case HTTP_UPDATE_OK:
-        Serial2.println("[update] Update ok.");
+        Serial.println("[update] Update ok.");
         ota_feedback = "[update] Update ok.";
         break;
     }
