@@ -41,11 +41,22 @@
 #define PIN_I2C_SDA      21
 #define PIN_I2C_SCL      22
 
-// ---- RS485 (Serial2, GPIO25=TX, GPIO26=RX) ----
-// ✅ Gemini 验证: 原理图 U2_TX=25, U2_RX=26 → RS485 收发器
-// 烧录时无需断开485 (不再与 USB 共用 UART0)
-#define PIN_RS485_TX     25
-#define PIN_RS485_RX     26
+// ---- RS485 (UART0, GPIO1=TX, GPIO3=RX, 经光耦隔离至 U2 收发器) ----
+// 以网表为准: U1.6→U1_RX→光耦U4→RS485收发器U2→RS485A/B
+//              U1.7→U1_TX→光耦U5→RS485收发器U2→RS485A/B
+// UART0 与 USB 串口调试共用, RS485 通信期间暂停调试输出
+#define PIN_RS485_TX     1     // ✅ 网表: U1.7=U1_TX=GPIO1
+#define PIN_RS485_RX     3     // ✅ 网表: U1.6=U1_RX=GPIO3
+
+// ---- 4G 模块 (P9 排母, UART2) ----
+// 以网表为准: U1.15→4G_TX=GPIO5, U1.8→4G_RX=GPIO25
+#define PIN_4G_TX        5     // ⚠️ 网表: U1.15=4G_TX=GPIO5 (经R97)
+#define PIN_4G_RX        25    // ⚠️ 网表: U1.8=4G_RX=GPIO25 (经R98)
+
+// ---- 调试串口 (H3 排针, UART2) ----
+// 以网表为准: U1.23→U2_TX=GPIO17, U1.24→U2_RX=GPIO16
+#define PIN_DBG_TX       17    // ⚠️ 网表: U1.23=U2_TX=GPIO17 (经R63)
+#define PIN_DBG_RX       16    // ⚠️ 网表: U1.24=U2_RX=GPIO16 (经R64)
 
 // ---- EC11 旋钮编码器 ----
 // ✅ EC11_KEY=GPIO32 (实测: 按下编码器触发)

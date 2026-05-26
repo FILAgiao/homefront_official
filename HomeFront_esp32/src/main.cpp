@@ -151,7 +151,7 @@ void time_fun()
 void setup()
 {
     Serial.begin(115200);                        // USB 调试输出 (CH340)
-    Serial2.begin(4800, SERIAL_8N1, 26, 25);    // RS485 Modbus (GPIO26=RX, GPIO25=TX)
+    // RS485 共用 UART0 (GPIO1/3), 仅在 check_soil() 中临时切换波特率到 4800
     delay(3000);  // 等待串口监视器连接
 
     // 硬核启动横幅, 防止被 Modbus 数据淹没
