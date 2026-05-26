@@ -200,19 +200,15 @@ static void handle_control_select()
         if (pump_working_flag) { shut_all(); }
         else
         {
+            pump_working_flag = 1;
+            start_work_time = timeinfo;
+            soil2wat = 1;
+            // 检查是否有阀门已开, 未开时提示用户 (洗车模式等场景只需水泵)
             bool any = false;
             for (int i = 0; i < valve_count; i++)
                 if (working_solenoid_valve[i]) { any = true; break; }
-            if (any)
-            {
-                pump_working_flag = 1;
-                start_work_time = timeinfo;
-                soil2wat = 1;
-            }
-            else
-            {
-                show_msg("请先打开阀门", PAGE_CONTROL, cursor);
-            }
+            if (!any)
+                show_msg("未开阀门,请确认手动阀", PAGE_CONTROL, cursor);
         }
     }
 }
