@@ -90,18 +90,13 @@ extern int soil_moisture_test_maxsize;
 extern int soil_moisture_list_size;
 
 // ---- 调试/上报 ----
-extern char data[128];
+extern char data[256];
 extern String time_status;
 extern int ota_status;
 extern String ota_feedback;
 
-// ---- 遥测缓存 ----
-extern bool time_to_go_flag;
-extern bool soil_to_go_flag;
-
-// ---- 物理按钮 ----
+// ---- 物理按钮 (预留, 未来接硬件按钮后更新) ----
 extern int physical_buttons;
-extern int trigger_pin_status;
 
 // ---- OTA ----
 extern String upUrl;

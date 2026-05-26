@@ -39,11 +39,10 @@ void updateBin()
     shut_all();
     WiFiClient UpdateClient;
 
-    // 如果是旧版esp32 SDK，需要删除下面四行，旧版不支持，不然会报错
-    // httpUpdate.onStart(update_started);
-    // httpUpdate.onEnd(update_finished);
-    // httpUpdate.onProgress(update_progress);
-    // httpUpdate.onError(update_error);
+    httpUpdate.onStart(update_started);
+    httpUpdate.onEnd(update_finished);
+    httpUpdate.onProgress(update_progress);
+    httpUpdate.onError(update_error);
 
     t_httpUpdate_return ret = httpUpdate.update(UpdateClient, upUrl);
     switch (ret)

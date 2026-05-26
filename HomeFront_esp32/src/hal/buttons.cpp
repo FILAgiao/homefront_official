@@ -17,7 +17,6 @@ static uint8_t         btn_last_stable[3] = {HIGH, HIGH, HIGH};
 static uint8_t         btn_last_raw[3]     = {HIGH, HIGH, HIGH};
 static unsigned long   btn_debounce_time[3] = {0, 0, 0};
 static unsigned long   btn_press_start[3]   = {0, 0, 0};
-static bool            btn_press_reported[3] = {false, false, false};
 static bool            btn_long_reported[3]  = {false, false, false};
 
 void buttons_init()
@@ -52,7 +51,6 @@ ButtonEvent button_get_event(int key_index)
     {
         btn_last_stable[key_index] = LOW;
         btn_press_start[key_index] = millis();
-        btn_press_reported[key_index] = false;
         btn_long_reported[key_index] = false;
     }
 

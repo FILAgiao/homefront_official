@@ -8,7 +8,7 @@ enum ButtonEvent {
     BTN_LONG_PRESS,  // 长按 (>800ms)
 };
 
-// 初始化三个按键 (KEY1=GPIO32, KEY2=GPIO33, KEY3=GPIO13)
+// 初始化三个按键 (KEY1=GPIO4, KEY2=GPIO27, KEY3=GPIO33)
 // 全部 INPUT_PULLUP, 按下 = LOW
 void buttons_init();
 

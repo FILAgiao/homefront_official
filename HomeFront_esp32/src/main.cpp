@@ -123,18 +123,13 @@ int soil_moisture_test_maxsize = 777;
 int soil_moisture_list_size = 0;
 
 // ---- 调试/上报 ----
-char data[128];
+char data[256];
 String time_status = "";
 int ota_status = 0;
 String ota_feedback = "";
 
-// ---- 遥测缓存 ----
-bool time_to_go_flag = false;
-bool soil_to_go_flag = false;
-
-// ---- 物理按钮 ----
+// ---- 物理按钮 (预留, 未来接硬件按钮后更新) ----
 int physical_buttons = 0;
-int trigger_pin_status = 0;
 
 // ============================================================
 // Ticker 中断回调
@@ -152,19 +147,14 @@ void setup()
 {
     Serial.begin(115200);                        // USB 调试输出 (CH340)
     // RS485 共用 UART0 (GPIO1/3), 仅在 check_soil() 中临时切换波特率到 4800
-    delay(3000);  // 等待串口监视器连接
+    delay(500);  // 等待串口监视器连接
 
     // 硬核启动横幅, 防止被 Modbus 数据淹没
     Serial.println("\n\n\n");
     Serial.println("===================================");
     Serial.println("  HomeFront 启动诊断");
     Serial.println("===================================");
-    Serial.println("\n\n\n");
-    Serial.println("===================================");
-    Serial.println("  HomeFront 启动诊断");
-    Serial.println("===================================");
 
-    Serial.println("[BOOT] setup start");
     Serial.println("[BOOT] setup start");
     configTime(8 * 3600, 0, "ntp1.aliyun.com", "ntp2.aliyun.com");
     delay(10);
@@ -392,7 +382,6 @@ void loop()
         {
             Serial.print(working_solenoid_valve[i]);
         }
-        get_localtime();
         flag_execute();
 
         // 每 5 秒发送一次遥测 (每 1 秒太频繁, 给服务器和网络减压)

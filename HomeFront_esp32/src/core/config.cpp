@@ -2,6 +2,7 @@
 #include "globals.h"
 #include "../hal/oled.h"
 #include <Preferences.h>
+#include <esp_task_wdt.h>
 
 void loadConfig()
 {
@@ -206,6 +207,7 @@ void startConfigPortal()
 
     while (true)
     {
+        esp_task_wdt_reset();
         WiFiClient client = server.available();
         if (!client) { delay(10); continue; }
 

@@ -15,7 +15,6 @@ void oled_init()
     delay(10);
 
     Serial.print("[OLED] I2C scan... ");
-    Serial.print("[OLED] I2C scan... ");
     bool found = false;
     for (uint8_t addr = 1; addr < 127; addr++)
     {
@@ -25,20 +24,15 @@ void oled_init()
             Serial.print("found at 0x");
             Serial.print(addr, HEX);
             Serial.print(" ");
-            Serial.print("found at 0x");
-            Serial.print(addr, HEX);
-            Serial.print(" ");
             found = true;
         }
     }
     if (!found)
     {
         Serial.println("NO DEVICE FOUND!");
-        Serial.println("NO DEVICE FOUND!");
     }
     else
     {
-        Serial.println();
         Serial.println();
     }
 
@@ -47,8 +41,6 @@ void oled_init()
     delay(100);
 
     uint8_t ok = u8g2.begin();
-    Serial.print("[OLED] u8g2.begin()=");
-    Serial.println(ok);
     Serial.print("[OLED] u8g2.begin()=");
     Serial.println(ok);
 
@@ -65,11 +57,9 @@ void oled_init()
         u8g2.drawUTF8(0, 12, "HomeFront启动中");
         u8g2.sendBuffer();
         Serial.println("[OLED] buffer sent OK");
-        Serial.println("[OLED] buffer sent OK");
     }
     else
     {
-        Serial.println("[OLED] U8G2 INIT FAILED!");
         Serial.println("[OLED] U8G2 INIT FAILED!");
     }
 }

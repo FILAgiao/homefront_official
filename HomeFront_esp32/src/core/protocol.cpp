@@ -42,13 +42,14 @@ void send2clinet()
     if (1 == ota_status)
     {
         time_status = ota_feedback;
+        ota_status = 0;  // 单次发送后复位, 防止 time_status 被永久覆盖
     }
 
-    sprintf(data, "#%d*%d*%d*%d*%d*%f*%d*%s*%d*%f*%d*%s*%d*%d*%d#",
-            solenoid_line, carwash_flag, auto_soil_watering_flag, auto_timing_watering_flag,
-            hand_watering_flag, soil_moisture, pump_working_flag, time_status.c_str(),
-            reboot_flag, soil_moisture_need, pin_watering_time[0], set_begin_time,
-            ota_status, 0, physical_buttons);
+    snprintf(data, sizeof(data), "#%d*%d*%d*%d*%d*%f*%d*%s*%d*%f*%d*%s*%d*%d*%d#",
+             solenoid_line, carwash_flag, auto_soil_watering_flag, auto_timing_watering_flag,
+             hand_watering_flag, soil_moisture, pump_working_flag, time_status.c_str(),
+             reboot_flag, soil_moisture_need, pin_watering_time[0], set_begin_time,
+             ota_status, 0, physical_buttons);
     Serial.print("回送的数据为：");
     Serial.println(data);
     if (client.connected())

@@ -9,7 +9,7 @@ enum EncoderEvent {
     ENC_CLICK,     // 按下
 };
 
-// 初始化 EC11 编码器 (A=GPIO34, B=GPIO35, KEY=GPIO39)
+// 初始化 EC11 编码器 (A=GPIO19, B=GPIO18, KEY=GPIO32)
 // 使用 GPIO 中断, 不轮询
 void encoder_init();
 

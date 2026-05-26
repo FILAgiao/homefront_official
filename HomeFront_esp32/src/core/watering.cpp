@@ -26,12 +26,24 @@ static const uint8_t pump_ch[MAX_PUMPS] = {
 
 bool get_localtime()
 {
+    static bool ntp_ever_ok = false;  // 防止 NTP 从未成功时读取未初始化的 timeinfo
+
     if (!getLocalTime(&timeinfo))
     {
         if (!NET_LOSTING_FLAG)
         {
             NET_LOSTING_FLAG = true;
-            NET_LOSTING_time = timeinfo;
+            if (ntp_ever_ok)
+            {
+                NET_LOSTING_time = timeinfo;
+            }
+            else
+            {
+                // NTP 从未成功, 从午夜开始计时, 避免使用未初始化数据
+                NET_LOSTING_time.tm_hour = 0;
+                NET_LOSTING_time.tm_min  = 0;
+                NET_LOSTING_time.tm_sec  = 0;
+            }
             BEGIN_TIMESTAMP = millis();
         }
         unsigned long elapsed = millis() - BEGIN_TIMESTAMP;
@@ -49,6 +61,7 @@ bool get_localtime()
     else
     {
         NET_LOSTING_FLAG = false;
+        ntp_ever_ok = true;
     }
 
     sprintf(time_temp, "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
@@ -164,14 +177,14 @@ bool soil_go()
 
 bool go_watering()
 {
-    time_to_go_flag = time2go();
-    soil_to_go_flag = soil_go();
+    bool time_to_go = time2go();
+    bool soil_to_go = soil_go();
 
-    if (time_to_go_flag && auto_timing_watering_flag)
+    if (time_to_go && auto_timing_watering_flag)
     {
         return true;
     }
-    else if (soil_to_go_flag && auto_soil_watering_flag)
+    else if (soil_to_go && auto_soil_watering_flag)
     {
         return true;
     }
