@@ -32,10 +32,14 @@ void wifi_reconnect_cx()
         {
             if (soil2wat == 1)
             {
-                Serial.println("使用millis()进行猜测时间");
-                NET_LOSTING_FLAG = true;
-                NET_LOSTING_time = timeinfo;
-                BEGIN_TIMESTAMP = millis();
+                // 仅首次进入离线状态时捕获时间基线, 避免每周期重置导致时间冻结
+                if (!NET_LOSTING_FLAG)
+                {
+                    Serial.println("使用millis()进行猜测时间");
+                    NET_LOSTING_FLAG = true;
+                    NET_LOSTING_time = timeinfo;
+                    BEGIN_TIMESTAMP = millis();
+                }
             }
             else
             {
