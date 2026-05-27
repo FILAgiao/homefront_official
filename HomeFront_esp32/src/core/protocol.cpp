@@ -4,6 +4,7 @@
 #include "watering.h"
 #include "config.h"
 #include <ArduinoJson.h>
+#include <Preferences.h>
 
 // 字符串分割函数: 按 fen 分隔 str, 取第 index 段
 String fenge(String str, String fen, int index)
@@ -197,6 +198,17 @@ void handle_incoming_message(const String &ch)
             reboot_flag = doc["restart"];
             if (reboot_flag == 1)
             {
+                ESP.restart();
+            }
+        }
+        else if (doc.containsKey("factory_reset"))
+        {
+            if (doc["factory_reset"] == 1)
+            {
+                shut_all();
+                Preferences p; p.begin("homefront", false);
+                p.clear(); p.end();
+                delay(200);
                 ESP.restart();
             }
         }

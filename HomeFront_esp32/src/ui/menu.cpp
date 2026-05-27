@@ -612,9 +612,26 @@ void menu_tick()
             }
             else  // 恢复出厂
             {
+                shut_all();                             // 先关断所有硬件
                 Preferences p; p.begin("homefront", false);
                 p.clear(); p.end();
-                delay(200);
+                // 复位所有全局变量为默认值, 防止重启前瞬间的异常状态
+                valve_count = 3; pump_count = 1; field_valve_num = 3;
+                soil_moisture_need = 32;
+                auto_timing_watering_flag = 0; auto_soil_watering_flag = 1;
+                carwash_duration_min = 30;
+                wat_begin_hour = 4; wat_begin_min = 40;
+                for (int i = 0; i < MAX_VALVES; i++) pin_watering_time[i] = (i < 3) ? 30 : 0;
+                for (int i = 0; i < MAX_VALVES; i++) working_solenoid_valve[i] = 0;
+                ssid = ""; password = ""; device_id = ""; upUrl = "";
+                // 显示确认消息后重启
+                {
+                    const char *lines[] = {"设置已清除", "即将重启..."};
+                    char tb[8]; bool wk;
+                    title_bar(tb, sizeof(tb), wk);
+                    oled_draw_page("恢复出厂", lines, 2, -1, false, nullptr, tb, wk);
+                }
+                delay(1500);
                 ESP.restart();
             }
         }
