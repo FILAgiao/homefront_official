@@ -47,7 +47,7 @@ void encoder_init()
 {
     pinMode(PIN_EC11_A, INPUT_PULLUP);
     pinMode(PIN_EC11_B, INPUT_PULLUP);
-    pinMode(PIN_EC11_KEY, INPUT);
+    pinMode(PIN_EC11_KEY, INPUT_PULLUP);
 
     // 双相均挂中断: 任一相变化都会触发状态机
     attachInterrupt(digitalPinToInterrupt(PIN_EC11_A), encoder_isr, CHANGE);
