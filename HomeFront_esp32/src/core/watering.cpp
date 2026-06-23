@@ -6,7 +6,7 @@
 
 // 逻辑阀门号 (0~5) → 物理 595 通道 (以网表为准)
 static const uint8_t valve_ch[MAX_VALVES] = {
-    HC595_CH_VALVE1,   // 阀门1 → CH0 (RLY1, 24V)
+    HC595_CH_VALVE1,   // 阀门1 → CH2 (RLY1, 24V)
     HC595_CH_VALVE2,   // 阀门2 → CH3 (RLY2, 24V)
     HC595_CH_VALVE3,   // 阀门3 → CH4 (RLY3, 24V)
     HC595_CH_VALVE4,   // 阀门4 → CH5 (RLY4, 12V)
@@ -16,7 +16,7 @@ static const uint8_t valve_ch[MAX_VALVES] = {
 
 // 逻辑水泵号 (0~1) → 物理 595 通道 (以网表为准)
 static const uint8_t pump_ch[MAX_PUMPS] = {
-    HC595_CH_PUMP1,    // 水泵1 → CH2 (RLY7, AC)
+    HC595_CH_PUMP1,    // 水泵1 → CH0 (RLY7, AC)
     HC595_CH_PUMP2     // 水泵2 → CH1 (RLY8, AC)
 };
 
@@ -236,6 +236,20 @@ void shut_all()
     net_solenoid_flag = 0;
     // 重置状态机, 防止软硬件不一致导致阀门异常切换
     current_state = STATE_IDLE;
+}
+
+// 软关闭: 只设标志触发状态机慢关 (关泵→等5s→关阀→等5s), 不直接断硬件
+// 用于控制页手动关闭阀门/水泵, 防止水锤
+void shut_all_soft()
+{
+    pump_working_flag = 0;
+    soil2wat = 0;
+    Solenoid_OffAll(0);
+    work_times = 0;
+    net_solenoid_flag = 0;
+    // 不调 relay_all_off() → flag_execute() 走 STATE_CLOSE_PUMP → STATE_CLOSE_VALVE
+    // 不重置 current_state → 让状态机自然走完关闭序列
+    Serial.println("shut_all_soft() — 状态机慢关已触发");
 }
 
 // ============================================================

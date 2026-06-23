@@ -17,9 +17,9 @@
 // U8 是第一片 595 (hc595_data 低字节), 级联方向: ESP32 → U8 → U9
 // RLY1~RLY6 = SRA-9VDC-CL 小继电器 120mA (电磁阀)
 // RLY7~RLY8 = SLA-XXVDC-XL-A 大继电器 185mA (水泵)
-#define HC595_CH_VALVE1   0    // Q0→SW0→RLY1 小 24V_OUT1(P4)
+#define HC595_CH_PUMP1    0    // Q0→SW0→RLY7 大 AC_L_OUT1(U36) [网表校正]
 #define HC595_CH_PUMP2    1    // Q1→SW1→RLY8 大 AC_L_OUT2(U37)
-#define HC595_CH_PUMP1    2    // Q2→SW2→RLY7 大 AC_L_OUT1(U36)
+#define HC595_CH_VALVE1   2    // Q2→SW2→RLY1 小 24V_OUT1(P4)  [网表校正]
 #define HC595_CH_VALVE2   3    // Q3→SW3→RLY2 小 24V_OUT2(P3)
 #define HC595_CH_VALVE3   4    // Q4→SW4→RLY3 小 24V_OUT3(P5)
 #define HC595_CH_VALVE4   5    // Q5→SW5→RLY4 小 12V_OUT1(P6)

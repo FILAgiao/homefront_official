@@ -4,8 +4,8 @@
 // 编码器事件
 enum EncoderEvent {
     ENC_NONE = 0,
-    ENC_UP,        // 顺时针 (正向)
-    ENC_DOWN,      // 逆时针
+    ENC_UP,        // 顺时针 (CW, 光标上移/值增加)
+    ENC_DOWN,      // 逆时针 (CCW, 光标下移/值减少)
     ENC_CLICK,     // 按下
 };
 

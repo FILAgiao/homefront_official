@@ -3,6 +3,7 @@
 #include "../hal/oled.h"
 #include <Preferences.h>
 #include <esp_task_wdt.h>
+#include <DNSServer.h>
 
 void loadConfig()
 {
@@ -134,18 +135,31 @@ static String buildConfigHtml()
     h += "<label>Device ID:</label><input name='devid' value='" + device_id + "'>";
     h += "<label>OTA URL:</label><input name='upurl' value='" + upUrl + "'>";
 
-    // 硬件布局
+    // 硬件布局 — 下拉框防误输
     h += "<h3>硬件布局</h3>";
-    h += "<label>阀门数量 (1-6):</label><input name='v_cnt' type='number' min='1' max='6' value='" + String(valve_count) + "'>";
-    h += "<label>水泵数量 (0-2):</label><input name='p_cnt' type='number' min='0' max='2' value='" + String(pump_count) + "'>";
-    h += "<label>菜地阀门号 (1-" + String(valve_count) + "):</label><input name='fld_v' type='number' min='1' max='" + String(valve_count) + "' value='" + String(field_valve_num) + "'>";
+    h += "<label>阀门数量:</label><select name='v_cnt' id='v_cnt' onchange='onValveCntChange()'>";
+    for (int i = 1; i <= MAX_VALVES; i++)
+        h += "<option value='" + String(i) + "'" + String(i == valve_count ? " selected" : "") + ">" + String(i) + "</option>";
+    h += "</select>";
 
-    // 浇水时长
+    h += "<label>水泵数量:</label><select name='p_cnt'>";
+    for (int i = 0; i <= MAX_PUMPS; i++)
+        h += "<option value='" + String(i) + "'" + String(i == pump_count ? " selected" : "") + ">" + String(i) + "</option>";
+    h += "</select>";
+
+    h += "<label>菜地阀门号:</label><select name='fld_v' id='fld_v'>";
+    for (int i = 1; i <= MAX_VALVES; i++)
+        h += "<option value='" + String(i) + "'" + String(i == field_valve_num ? " selected" : "") + ">" + String(i) + "</option>";
+    h += "</select>";
+
+    // 浇水时长 — 始终渲染 6 个, JS 控制显隐
     h += "<h3>阀门浇水时长 (分钟)</h3>";
-    for (int i = 0; i < valve_count; i++)
+    for (int i = 0; i < MAX_VALVES; i++)
     {
+        h += "<div id='wt_div_" + String(i) + "' style='display:" + String(i < valve_count ? "block" : "none") + "'>";
         h += "<label>阀门" + String(i + 1) + ":</label>";
         h += "<input name='wt_" + String(i) + "' type='number' min='0' max='120' value='" + String(pin_watering_time[i]) + "'>";
+        h += "</div>";
     }
 
     // 浇水参数
@@ -176,7 +190,29 @@ static String buildConfigHtml()
 
     h += "<input type='submit' value='保存并启动'>";
     h += "<p class='brand'>浙江水龙农业科技 &copy; 2026</p>";
-    h += "</form></body></html>";
+    h += "</form>";
+
+    // JS: 阀门数量变化 → 显隐阀门输入行 + 重建菜地号下拉选项
+    h += "<script>";
+    h += "function onValveCntChange(){";
+    h += "var n=parseInt(document.getElementById('v_cnt').value)||3;";
+    h += "for(var i=0;i<6;i++){";
+    h += "var d=document.getElementById('wt_div_'+i);";
+    h += "if(d)d.style.display=i<n?'block':'none';";
+    h += "}";
+    h += "var s=document.getElementById('fld_v');";
+    h += "var cur=parseInt(s.value)||1;";
+    h += "s.innerHTML='';";
+    h += "for(var i=1;i<=n;i++){";
+    h += "var o=document.createElement('option');";
+    h += "o.value=i;o.textContent=i;";
+    h += "if(i===(cur>n?n:cur))o.selected=true;";
+    h += "s.appendChild(o);";
+    h += "}";
+    h += "}";
+    h += "</script>";
+
+    h += "</body></html>";
     return h;
 }
 
@@ -186,13 +222,12 @@ void startConfigPortal()
     oled_init();
     {
         const char *lines[] = {
-            "AP配网模式",
-            "请连接WiFi:",
+            "AP配网WiFi连接",
             "Homefront-Setup",
             "浏览器打开",
             "192.168.4.1"
         };
-        oled_draw_page("首次配置", lines, 5, -1, false);
+        oled_draw_page("首次配置", lines, 4, -1, false);
     }
 
     Serial.println("startConfigPortal: starting AP...");
@@ -201,6 +236,11 @@ void startConfigPortal()
     Serial.print("AP IP: ");
     Serial.println(WiFi.softAPIP());
 
+    // 启动 DNS 劫持: 所有域名 → 192.168.4.1 (实现 captive portal 自动弹出)
+    DNSServer dnsServer;
+    dnsServer.start(53, "*", WiFi.softAPIP());
+    Serial.println("DNS server started (captive portal)");
+
     WiFiServer server(80);
     server.begin();
     Serial.println("HTTP config server started on port 80");
@@ -208,6 +248,8 @@ void startConfigPortal()
     while (true)
     {
         esp_task_wdt_reset();
+        dnsServer.processNextRequest();
+
         WiFiClient client = server.available();
         if (!client) { delay(10); continue; }
 
@@ -401,9 +443,20 @@ void startConfigPortal()
         }
         else
         {
-            String html = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n";
-            html += buildConfigHtml();
-            client.print(html);
+            // Captive portal: 非根路径 → 302 跳转 (触发手机自动弹出)
+            int pathEnd = request.indexOf(' ', 4);  // "GET /xxx HTTP/1.1"
+            String path = (pathEnd > 4) ? request.substring(4, pathEnd) : "/";
+            if (path != "/" && path != "/favicon.ico")
+            {
+                String redir = "HTTP/1.1 302 Found\r\nLocation: http://192.168.4.1/\r\nConnection: close\r\n\r\n";
+                client.print(redir);
+            }
+            else
+            {
+                String html = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n";
+                html += buildConfigHtml();
+                client.print(html);
+            }
             client.stop();
         }
     }

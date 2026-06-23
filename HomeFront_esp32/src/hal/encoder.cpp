@@ -6,11 +6,11 @@
  *
  * 原理:
  *   编码器 A/B 两相输出 2-bit Gray 码, 旋转时状态按固定序列变化:
- *     CW:  00→01→11→10→00
- *     CCW: 00→10→11→01→00
- *   其他跳变 (如 00→11) 均为触点抖动, 状态机会自动过滤。
+ *     CW (顺时针→光标上移/值增加):  00→01→11→10→00
+ *     CCW (逆时针→光标下移/值减少): 00→10→11→01→00
+ *   其他跳变 (如 00→11) 均为触点抖动, Gray码状态机自动过滤, 无需额外软件消抖。
  *
- * 每个 detent (卡位) 经过 4 次状态转换, 累积 4 步后在 encoder_get_event()
+ * 每个 detent (卡位) 经过 2 次状态转换, 累积 2 步后在 encoder_get_event()
  * 中折算为 1 个方向事件 (ENC_UP / ENC_DOWN), 保证光标移动 1 格/卡位。
  *
  * 双相均挂 CHANGE 中断, 任何一相变化都触发状态机。
@@ -91,21 +91,26 @@ EncoderEvent encoder_get_event()
     interrupts();
 
     // 2 次状态转换 = 1 个 detent (卡位)
-    if (pos >= 2)
+    // 顺时针(CW)=向上滚动/值增加, 逆时针(CCW)=向下滚动/值减少
+    // Gray码状态机已在ISR中过滤触点抖动, 此处不再加软件门限防止快速旋转卡顿
+    if (pos >= 2 || pos <= -2)
     {
-        noInterrupts();
-        encoder_pos -= 2;
-        interrupts();
-        Serial.println("[E>]");
-        return ENC_UP;
-    }
-    if (pos <= -2)
-    {
-        noInterrupts();
-        encoder_pos += 2;
-        interrupts();
-        Serial.println("[E<]");
-        return ENC_DOWN;
+        if (pos >= 2)
+        {
+            noInterrupts();
+            encoder_pos -= 2;
+            interrupts();
+            Serial.println("[E>]");
+            return ENC_UP;     // CW → 向上
+        }
+        else
+        {
+            noInterrupts();
+            encoder_pos += 2;
+            interrupts();
+            Serial.println("[E<]");
+            return ENC_DOWN;   // CCW → 向下
+        }
     }
 
     return ENC_NONE;

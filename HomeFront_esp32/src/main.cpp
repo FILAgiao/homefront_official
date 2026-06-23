@@ -187,15 +187,14 @@ void setup()
     // 等待 WiFi 连接 (期间保持 UI 响应, 最多等 15 秒)
     {
         const char *lines[] = {"WiFi连接中..."};
-        oled_draw_page("启动中", lines, 1, -1, false);
+        oled_draw_page("HomeFront", lines, 1, -1, false);
     }
     {
         unsigned long wifi_start = millis();
         while (WiFi.status() != WL_CONNECTED && millis() - wifi_start < 15000)
         {
-            menu_tick();          // 让编码器/按键在等待期间也能响应
+            menu_tick();
             esp_task_wdt_reset();
-            delay(10);
         }
     }
 
@@ -208,15 +207,21 @@ void setup()
         char ip_line[22];
         snprintf(ip_line, sizeof(ip_line), "IP: %s", WiFi.localIP().toString().c_str());
         const char *lines[] = {"WiFi已连接", ip_line};
-        oled_draw_page("启动完成", lines, 2, -1, false);
-        delay(2000);
+        oled_draw_page("HomeFront", lines, 2, -1, false);
+
+        // 短暂展示结果, 保持 UI 响应
+        unsigned long done_ms = millis();
+        while (millis() - done_ms < 2000)
+        {
+            menu_tick();
+            esp_task_wdt_reset();
+        }
     }
     else
     {
         Serial.println("WiFi not connected, will retry in loop");
         char ssid_line[22], pass_line[22];
         snprintf(ssid_line, sizeof(ssid_line), "WiFi: %s", ssid.c_str());
-        // 密码只显示首尾字符, 方便排查
         int plen = password.length();
         if (plen <= 2)
             snprintf(pass_line, sizeof(pass_line), "密码: %s", password.c_str());
@@ -224,8 +229,14 @@ void setup()
             snprintf(pass_line, sizeof(pass_line), "密码: %c***%c",
                      password.charAt(0), password.charAt(plen - 1));
         const char *lines[] = {"WiFi连接失败", ssid_line, pass_line, "检查后重启设备"};
-        oled_draw_page("启动失败", lines, 4, -1, false);
-        delay(3000);
+        oled_draw_page("HomeFront", lines, 4, -1, false);
+
+        unsigned long done_ms = millis();
+        while (millis() - done_ms < 3000)
+        {
+            menu_tick();
+            esp_task_wdt_reset();
+        }
     }
 
     // TCP 连接交给 loop() 里的 check_client_connected() 处理, 不在 setup 里阻塞
@@ -331,7 +342,8 @@ void loop()
                     Serial.print("和开始的时间相差分钟数:");
                     Serial.println(time_gap(timeinfo, start_work_time));
                     time_gap_min = time_gap(timeinfo, start_work_time);
-                    if (time_gap_min > pin_watering_time[(valve_count - work_times)])
+                    bool time_exceed = time_gap_min > pin_watering_time[(valve_count - work_times)];
+                    if (time_exceed)
                     {
                         work_times = work_times - 1;
                         Serial.println("worktimes-1了");

@@ -15,6 +15,7 @@ bool go_watering();
 void pump_work();
 void Solenoid_OffAll(int a = 0);  // a=0 全关; a=1~7 只开第 a 路
 void shut_all();
+void shut_all_soft();  // 触发状态机慢关, 不直接断硬件 (防锤)
 
 // ---- 5 状态机执行器 ----
 void flag_execute();

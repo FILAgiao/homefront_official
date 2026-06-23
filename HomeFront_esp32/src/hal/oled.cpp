@@ -3,7 +3,7 @@
 
 /*
  * 0.96" SSD1306 OLED (128x64) — 中文 wqy12 字体 (12x12)
- * 布局: 标题栏 14px + 内容行 + 可选底部状态栏
+ * 布局: 标题栏 14px + 内容行 12px×4 + 可选底部状态栏 10px
  */
 
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
@@ -65,7 +65,7 @@ void oled_init()
 }
 
 #define TITLE_H      14     // 标题栏高度
-#define ROW_HEIGHT   10     // 每行高度 (px)
+#define ROW_HEIGHT   12     // 每行高度 (px) — 必须 ≥ 字体高度(12) 防止行间重叠
 #define FOOTER_H     10     // 底部状态栏高度
 
 void oled_draw_page(const char *title, const char *lines[], int totalCount,
@@ -88,17 +88,26 @@ void oled_draw_page(const char *title, const char *lines[], int totalCount,
         if (rx < 56) rx = 56;
         u8g2.drawUTF8(rx, 12, title_right);
 
-        // 4根信号柱: 宽2px, 间距2px, 同一基线, 从左到右渐高
-        int bar_x = rx + rw + 4;
-        int bar_bottom = TITLE_H - 1;               // 基线 y=13
-        int heights[4] = {4, 7, 10, 13};           // ▁▄▆█ 从矮到高
-        for (int i = 0; i < 4; i++)
+        if (wifi_ok)
         {
-            int bar_top = bar_bottom - heights[i];
-            if (wifi_ok)
+            // 4根信号柱: 宽2px, 间距2px, 同一基线, 从左到右渐高
+            int bar_x = rx + rw + 4;
+            int bar_bottom = TITLE_H - 1;
+            int heights[4] = {4, 7, 10, 13};
+            for (int i = 0; i < 4; i++)
+            {
+                int bar_top = bar_bottom - heights[i];
                 u8g2.drawBox(bar_x + i * 4, bar_top, 2, heights[i]);
-            else
-                u8g2.drawFrame(bar_x + i * 4, bar_top, 2, heights[i]);
+            }
+        }
+        else
+        {
+            // WiFi 未连接 → X 标记
+            int cx = 128 - 14;  // 右侧留 2px 边距
+            int cy = 2;
+            int sz = 9;         // X 的外框大小
+            u8g2.drawLine(cx, cy, cx + sz, cy + sz);
+            u8g2.drawLine(cx + sz, cy, cx, cy + sz);
         }
     }
     u8g2.setDrawColor(1);
@@ -114,32 +123,33 @@ void oled_draw_page(const char *title, const char *lines[], int totalCount,
 
     if (totalCount == 0) { u8g2.sendBuffer(); return; }
 
-    int visibleRows = footer ? 4 : 5;  // footer 占一行
-
-    // 计算可见窗口 (以 cursor 为中心)
+    // 计算可见窗口
+    //   cursor < 0: 静态展示全部行 (由 y>maxY 守卫决定实际能画几行)
+    //   cursor >=0: 以 cursor 为中心滚动, 最多 visibleRows 行
     int winStart = 0;
+    int winEnd = totalCount;
     if (cursorVisible && cursor >= 0)
     {
+        int visibleRows = footer ? 3 : 4;
         winStart = cursor - visibleRows / 2;
         if (winStart < 0) winStart = 0;
         if (winStart + visibleRows > totalCount)
             winStart = totalCount - visibleRows;
         if (winStart < 0) winStart = 0;
+        winEnd = winStart + visibleRows;
+        if (winEnd > totalCount) winEnd = totalCount;
     }
-
-    int winEnd = winStart + visibleRows;
-    if (winEnd > totalCount) winEnd = totalCount;
 
     for (int vi = winStart; vi < winEnd; vi++)
     {
         int row = vi - winStart;
-        int y = TITLE_H + 2 + (row + 1) * ROW_HEIGHT;
-        int maxY = footer ? 64 - FOOTER_H - 2 : 62;
+        int y = TITLE_H + (row + 1) * ROW_HEIGHT;
+        int maxY = footer ? 64 - FOOTER_H : 64;
         if (y > maxY) break;
 
         if (cursorVisible && vi == cursor)
         {
-            u8g2.drawBox(0, y - 10, 128, ROW_HEIGHT);
+            u8g2.drawBox(0, y - ROW_HEIGHT, 128, ROW_HEIGHT);
             u8g2.setDrawColor(0);
             u8g2.drawUTF8(2, y, lines[vi]);
             u8g2.setDrawColor(1);

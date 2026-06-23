@@ -36,6 +36,11 @@ static bool editing = false;    // true=正在编辑数值
 static int  edit_val = 0;
 static int  edit_dir = 0;    // -1=减, 0=刚进入, +1=加 — 用于方向指示动画
 
+// ---- 确认页状态 (必须在 get_parent_page 前声明) ----
+static int confirm_action = 0;  // 0=重启, 1=恢复出厂, 2=紧急停止
+static int confirm_return_page = PAGE_MAIN;
+static int confirm_return_cursor = 0;
+
 // ---- 导航 ----
 // 每个页面的"上级页面", 使用函数而非可变变量, 避免深层导航时状态被覆盖
 static int get_parent_page(int page)
@@ -44,13 +49,10 @@ static int get_parent_page(int page)
     {
         case PAGE_MAIN:    return PAGE_MAIN;     // 主页不能再返回
         case PAGE_ABOUT:   return PAGE_SYSTEM;   // 关于 ← 系统管理
-        case PAGE_CONFIRM: return PAGE_SYSTEM;   // 确认 ← 系统管理
+        case PAGE_CONFIRM: return (confirm_action == 2) ? confirm_return_page : PAGE_SYSTEM;
         default:           return PAGE_MAIN;     // 其余页面均返回主菜单
     }
 }
-
-// ---- 确认页状态 ----
-static int confirm_action = 0;  // 0=重启, 1=恢复出厂
 
 // ---- 临时消息页 ----
 static const char *msg_text = nullptr;
@@ -116,11 +118,11 @@ static int page_count(int page)
         case PAGE_MAIN:    return 5;
         case PAGE_STATUS:  return 4;
         case PAGE_CONTROL: return valve_count + pump_count;  // 动态
-        case PAGE_MODE:    return 5;
+        case PAGE_MODE:    return 6;
         case PAGE_PARAMS:  return 7 + valve_count;           // 阀门时长 ×N + 菜地号 + 定时 + 湿度 + 洗车
         case PAGE_SYSTEM:  return 6;  // 保存/WiFi重连/关于/固件升级/重启/恢复出厂
         case PAGE_ABOUT:   return 6;  // 版本/编译时间/WiFi/IP/运行时长/内存
-        case PAGE_CONFIRM: return 1;
+        case PAGE_CONFIRM: return (confirm_action == 2) ? 2 : 1;
         case PAGE_MSG:     return 1;
         default:           return 0;
     }
@@ -131,19 +133,35 @@ static int page_count(int page)
 // ============================================================
 static void draw_status()
 {
-    char b1[22], b2[22], b3[22], b4[22];
+    char b1[22], b2[22], b3[22], b4[64];
     snprintf(b1, sizeof(b1), "土壤湿度: %.1f%%", soil_moisture);
     snprintf(b2, sizeof(b2), "阈值: %.0f%%", soil_moisture_need);
+
+    // 模式文本
     const char *mode = "空闲";
-    if (carwash_flag)                         mode = "洗车";
-    else if (vegetable_flag_net || vegetable_flag_hand) mode = "菜地";
-    else if (soil2wat)                        mode = "浇水中";
+    if (carwash_flag)                           mode = "洗车";
+    else if (hand_watering_flag)                mode = "手动浇花";
+    else if (vegetable_flag_net || vegetable_flag_hand) mode = "定湿度";
+    else if (soil2wat)                          mode = "浇水中";
     snprintf(b3, sizeof(b3), "模式: %s", mode);
-    snprintf(b4, sizeof(b4), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
+
+    // 各区域浇花时长 (格式: "阀: 30V、30、30V")
+    {
+        char dur[64] = "阀: ";
+        int pos = strlen(dur);
+        for (int i = 0; i < valve_count && pos < (int)sizeof(dur) - 7; i++)
+        {
+            const char *fmt = working_solenoid_valve[i] ?
+                (i == 0 ? "%dV" : "、%dV") :
+                (i == 0 ? "%d"  : "、%d");
+            pos += snprintf(dur + pos, sizeof(dur) - pos, fmt, pin_watering_time[i]);
+        }
+        snprintf(b4, sizeof(b4), "%s", dur);
+    }
     const char *lines[] = {b1, b2, b3, b4};
     char tb[8]; bool wk;
     title_bar(tb, sizeof(tb), wk);
-    oled_draw_page(breadcrumb(PAGE_STATUS), lines, 4, -1, false, nullptr, tb, wk);
+    oled_draw_page(breadcrumb(PAGE_STATUS), lines, 4, cursor, true, nullptr, tb, wk);
 }
 
 // ============================================================
@@ -182,7 +200,7 @@ static void handle_control_select()
             bool any = false;
             for (int i = 0; i < valve_count; i++)
                 if (working_solenoid_valve[i]) { any = true; break; }
-            if (!any) shut_all();
+            if (!any) shut_all_soft();  // 慢关防锤, 走状态机关泵→等5s→关阀序列
         }
         else
         {
@@ -197,7 +215,7 @@ static void handle_control_select()
     else
     {
         // 水泵开关
-        if (pump_working_flag) { shut_all(); }
+        if (pump_working_flag) { shut_all_soft(); }  // 慢关防锤
         else
         {
             pump_working_flag = 1;
@@ -208,7 +226,7 @@ static void handle_control_select()
             for (int i = 0; i < valve_count; i++)
                 if (working_solenoid_valve[i]) { any = true; break; }
             if (!any)
-                show_msg("未开阀门,请确认手动阀", PAGE_CONTROL, cursor);
+                show_msg("请注意手动打开洗车阀门", PAGE_CONTROL, cursor);
         }
     }
 }
@@ -218,16 +236,20 @@ static void handle_control_select()
 // ============================================================
 static void draw_mode()
 {
-    char b1[22], b2[22], b3[22], b4[22], b5[22];
-    snprintf(b1, sizeof(b1), "定时浇水: %s", YN(auto_timing_watering_flag));
-    snprintf(b2, sizeof(b2), "湿度浇水: %s", YN(auto_soil_watering_flag));
-    snprintf(b3, sizeof(b3), "▸ 手动浇水");
-    snprintf(b4, sizeof(b4), "▸ 洗车模式");
-    snprintf(b5, sizeof(b5), "▸ 菜地浇水");
-    const char *lines[] = {b1, b2, b3, b4, b5};
+    char b1[22], b2[22], b3[22], b4[22], b5[22], b6[22];
+    snprintf(b1, sizeof(b1), "定时浇水: %s%s", YN(auto_timing_watering_flag),
+             auto_timing_watering_flag ? "V" : "");
+    snprintf(b2, sizeof(b2), "湿度浇水: %s%s", YN(auto_soil_watering_flag),
+             auto_soil_watering_flag ? "V" : "");
+    snprintf(b3, sizeof(b3), "▸ 手动浇水%s", hand_watering_flag ? "V" : "");
+    snprintf(b4, sizeof(b4), "▸ 洗车模式%s", carwash_flag ? "V" : "");
+    snprintf(b5, sizeof(b5), "▸ 菜地浇水%s",
+             (vegetable_flag_hand || vegetable_flag_net) ? "V" : "");
+    snprintf(b6, sizeof(b6), "▸ 关闭全部");
+    const char *lines[] = {b1, b2, b3, b4, b5, b6};
     char tb[8]; bool wk;
     title_bar(tb, sizeof(tb), wk);
-    oled_draw_page(breadcrumb(PAGE_MODE), lines, 5, cursor, true, nullptr, tb, wk);
+    oled_draw_page(breadcrumb(PAGE_MODE), lines, 6, cursor, true, nullptr, tb, wk);
 }
 
 static void handle_mode_select()
@@ -264,6 +286,12 @@ static void handle_mode_select()
             working_solenoid_valve[field_valve_num - 1] = 1;
             start_work_time = timeinfo;
             soil2wat = 1;
+            break;
+        case 5: // 关闭全部 — 停止所有正在进行的浇水, 恢复普通模式
+            shut_all_soft();
+            carwash_flag = 0;
+            vegetable_flag_hand = 0;
+            vegetable_flag_net = 0;
             break;
     }
     saveAllConfig();  // 开关类参数立即持久化
@@ -324,7 +352,7 @@ static void draw_params()
 {
     int n = page_count(PAGE_PARAMS);
     #define PARAM_BUF_COUNT (MAX_VALVES + 7)
-    char bufs[PARAM_BUF_COUNT][22];
+    char bufs[PARAM_BUF_COUNT][28];  // 最长标签"阀门N时长(分)"(18) + ": "(2) + 值(3) + hint" +/->"(2) + NUL(1) = 26, 取28
     const char *lines[PARAM_BUF_COUNT];
     if (n > PARAM_BUF_COUNT) n = PARAM_BUF_COUNT;
 
@@ -343,7 +371,7 @@ static void draw_params()
         {
             if (edit_dir > 0)      hint = " +";
             else if (edit_dir < 0) hint = " -";
-            else                   hint = " ◀";
+            else                   hint = " >";  // ASCII, WQY12 GB2312 不含 U+25C0
         }
         snprintf(bufs[i], sizeof(bufs[i]), "%s: %d%s",
                  p.label,
@@ -353,7 +381,7 @@ static void draw_params()
     }
     char tb[8]; bool wk;
     title_bar(tb, sizeof(tb), wk);
-    oled_draw_page(breadcrumb(PAGE_PARAMS), lines, n, cursor, !editing, nullptr, tb, wk);
+    oled_draw_page(breadcrumb(PAGE_PARAMS), lines, n, cursor, true, nullptr, tb, wk);
 }
 
 static void enter_edit()
@@ -477,7 +505,7 @@ static void draw_about()
     const char *lines[] = {b1, b2, b3, b4, b5, b6};
     char tb[8]; bool wk;
     title_bar(tb, sizeof(tb), wk);
-    oled_draw_page(breadcrumb(PAGE_ABOUT), lines, 6, -1, false, nullptr, tb, wk);
+    oled_draw_page(breadcrumb(PAGE_ABOUT), lines, 6, cursor, true, nullptr, tb, wk);
 }
 
 // ============================================================
@@ -513,11 +541,28 @@ static void handle_main_select()
 // ============================================================
 static void draw_confirm()
 {
-    const char *ctitle = (confirm_action == 0) ? "确认重启?" : "确认恢复出厂?";
-    const char *lines[] = {"按下确认  KEY1取消"};
+    const char *ctitle;
+    const char *lines[2];
+    int n;
+    int cur;
+    if (confirm_action == 2)
+    {
+        ctitle = "确认紧急停止?";
+        lines[0] = "▸ 确认";
+        lines[1] = "  取消";
+        n = 2;
+        cur = cursor;
+    }
+    else
+    {
+        ctitle = (confirm_action == 0) ? "确认重启?" : "确认恢复出厂?";
+        lines[0] = "按下确认  KEY1取消";
+        n = 1;
+        cur = 0;
+    }
     char tb[8]; bool wk;
     title_bar(tb, sizeof(tb), wk);
-    oled_draw_page(ctitle, lines, 1, 0, false, nullptr, tb, wk);
+    oled_draw_page(ctitle, lines, n, cur, (confirm_action == 2), nullptr, tb, wk);
 }
 
 // ============================================================
@@ -554,6 +599,20 @@ static void draw_current()
 // 公开接口
 // ============================================================
 
+// 紧急停止 — 关断硬件 + 关闭所有模式 + 持久化
+// resume_page/resume_cursor 仅在从确认页取消时使用, 但不影响 show_msg 的参数
+static void emergency_stop()
+{
+    shut_all();
+    auto_timing_watering_flag = 0;
+    auto_soil_watering_flag = 0;
+    carwash_flag = 0;
+    vegetable_flag_hand = 0;
+    vegetable_flag_net = 0;
+    hand_watering_flag = 0;
+    saveAllConfig();
+}
+
 void menu_init()
 {
     oled_init();
@@ -564,6 +623,26 @@ void menu_init()
 
 void menu_tick()
 {
+    // ---- 定期自动刷新: 时间/分钟变化 或 WiFi 状态变化时重绘标题栏 ----
+    {
+        static unsigned long last_refresh_check = 0;
+        if (millis() - last_refresh_check >= 500)
+        {
+            last_refresh_check = millis();
+            static int  last_min    = -1;
+            static bool last_wifi_ok = false;
+            int  cur_min = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+            bool cur_wifi = (WiFi.status() == WL_CONNECTED);
+            if (cur_min != last_min || cur_wifi != last_wifi_ok)
+            {
+                last_min    = cur_min;
+                last_wifi_ok = cur_wifi;
+                if (current_page != PAGE_MSG)
+                    draw_current();
+            }
+        }
+    }
+
     // ---- 临时消息页: 2 秒后自动消失, KEY1 可提前返回 ----
     if (current_page == PAGE_MSG)
     {
@@ -602,7 +681,27 @@ void menu_tick()
     // ---- 确认页 ----
     if (current_page == PAGE_CONFIRM)
     {
-        if (enc == ENC_CLICK)
+        if (confirm_action == 2)
+        {
+            // 紧急停止确认: 2 项可选, 滚轮上下切换
+            if (enc == ENC_UP)        { cursor = 0;      draw_current(); }
+            else if (enc == ENC_DOWN) { cursor = 1;      draw_current(); }
+            else if (enc == ENC_CLICK)
+            {
+                if (cursor == 0)
+                {
+                    emergency_stop();
+                    show_msg("已紧急停止!", PAGE_MAIN, 0);
+                }
+                else
+                {
+                    current_page = confirm_return_page;
+                    cursor = confirm_return_cursor;
+                }
+                draw_current();
+            }
+        }
+        else if (enc == ENC_CLICK)
         {
             if (confirm_action == 0)  // 重启
             {
@@ -637,21 +736,32 @@ void menu_tick()
         }
         if (button_get_event(0) == BTN_PRESS)
         {
-            current_page = get_parent_page(current_page); cursor = (confirm_action == 0) ? 4 : 5;
+            if (confirm_action == 2)
+            {
+                current_page = confirm_return_page;
+                cursor = confirm_return_cursor;
+            }
+            else
+            {
+                current_page = PAGE_SYSTEM;
+                cursor = (confirm_action == 0) ? 5 : 6;
+            }
             draw_current();
         }
         return;
     }
 
-    // ---- 正常导航 ----
+    // ---- 正常导航 (边界循环) ----
     if (enc == ENC_UP)
     {
-        cursor = (cursor - 1 + maxItems) % maxItems;
+        if (cursor > 0) cursor--;
+        else cursor = maxItems - 1;
         draw_current();
     }
     else if (enc == ENC_DOWN)
     {
-        cursor = (cursor + 1) % maxItems;
+        if (cursor < maxItems - 1) cursor++;
+        else cursor = 0;
         draw_current();
     }
     else if (enc == ENC_CLICK)
@@ -686,18 +796,14 @@ void menu_tick()
         draw_current();
     }
 
-    // KEY3 → 紧急停止 (关闭所有模式并关断硬件, 防止自动模式重新触发)
-    if (button_get_event(2) == BTN_PRESS || button_get_event(2) == BTN_LONG_PRESS)
+    // KEY3 长按 → 紧急停止确认 (防误触)
+    if (button_get_event(2) == BTN_LONG_PRESS)
     {
-        shut_all();
-        auto_timing_watering_flag = 0;
-        auto_soil_watering_flag = 0;
-        carwash_flag = 0;
-        vegetable_flag_hand = 0;
-        vegetable_flag_net = 0;
-        hand_watering_flag = 0;
-        saveAllConfig();
-        show_msg("已紧急停止!", PAGE_MAIN, 0);
+        confirm_action = 2;
+        confirm_return_page = current_page;
+        confirm_return_cursor = cursor;
+        current_page = PAGE_CONFIRM;
+        cursor = 0;  // 默认选中"确认"
         draw_current();
     }
 }
