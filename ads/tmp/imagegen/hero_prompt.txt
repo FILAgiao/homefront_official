@@ -1,0 +1,12 @@
+Use case: ads-marketing
+Asset type: mobile H5 landing page hero
+Primary request: premium luxury villa garden with smart irrigation at sunset for a high-end Chinese client proposal
+Scene/backdrop: modern luxury villa courtyard at golden hour, expansive lawn, outdoor lounge seating, subtle coffee table in foreground, fine irrigation mist catching sunlight
+Subject: automatic underground sprinkler system watering a perfectly maintained garden without any people in frame
+Style/medium: ultra realistic premium real-estate lifestyle photography blended with tasteful smart-home advertising aesthetics
+Composition/framing: vertical 9:16 portrait, cinematic wide view with strong depth, foreground terrace details, mid-ground lawn and sprinkler arcs, villa architecture in background, generous darker negative space on the upper left for headline overlay
+Lighting/mood: warm sunset backlight, golden highlights, soft atmospheric mist, calm, aspirational, serene, high-end
+Color palette: black, deep green, warm gold, amber sunlight
+Materials/textures: wet grass, stone terrace, glass villa facade, fine water droplets, subtle lens bloom
+Constraints: no people, no UI, no Chinese text, no logo, no watermark, no split-panel collage, no obvious AI artifacts, keep it elegant and minimal
+Avoid: clutter, cartoon style, oversaturated colors, futuristic gadgets in scene, harsh HDR, distorted architecture

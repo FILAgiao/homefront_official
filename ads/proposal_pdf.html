@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>及时雨智能灌溉提案册</title>
+  <style>
+    :root {
+      --bg: #060606;
+      --paper: #0a0a0a;
+      --panel: rgba(255, 255, 255, 0.05);
+      --panel-strong: rgba(10, 12, 12, 0.36);
+      --stroke: rgba(255, 255, 255, 0.1);
+      --text: #ffffff;
+      --muted: rgba(255, 255, 255, 0.76);
+      --gold: #d5b06b;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.24);
+      --font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+    }
+
+    body {
+      padding: 24px 0 64px;
+    }
+
+    .book {
+      width: min(1120px, calc(100vw - 48px));
+      margin: 0 auto;
+      display: grid;
+      gap: 24px;
+    }
+
+    .page {
+      position: relative;
+      min-height: 1480px;
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.008)), var(--paper);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: var(--shadow);
+      page-break-after: always;
+    }
+
+    .page:last-child {
+      page-break-after: auto;
+    }
+
+    .full-bleed {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(180deg, rgba(0,0,0,0.02), rgba(0,0,0,0.42)),
+        var(--bg-image);
+      background-size: cover;
+      background-position: var(--bg-pos, center);
+      background-repeat: no-repeat;
+    }
+
+    .full-bleed::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at var(--focus-x, 50%) 16%, rgba(255, 229, 180, 0.2), transparent 18%),
+        linear-gradient(180deg, rgba(0,0,0,0.02), rgba(0,0,0,0.12) 26%, rgba(0,0,0,0.38) 100%);
+    }
+
+    .page-inner {
+      position: relative;
+      z-index: 1;
+      min-height: inherit;
+      padding: 52px 54px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      border-radius: 999px;
+      border: 1px solid rgba(213, 176, 107, 0.22);
+      background: rgba(8, 10, 8, 0.34);
+      color: var(--gold);
+      font-size: 13px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .kicker::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .brandline {
+      margin-top: 18px;
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+    }
+
+    .brandline strong {
+      font-size: 44px;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+    }
+
+    .brandline span {
+      font-size: 13px;
+      letter-spacing: 0.15em;
+      color: rgba(255,255,255,0.42);
+      text-transform: uppercase;
+    }
+
+    .hero-stack {
+      width: min(48%, 520px);
+      display: grid;
+      gap: 18px;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 112px;
+      line-height: 0.9;
+      letter-spacing: -0.08em;
+      text-shadow: 0 10px 32px rgba(0,0,0,0.24);
+    }
+
+    .hero-lead {
+      padding: 0;
+      border-radius: 0;
+      background: none;
+      border: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      font-size: 22px;
+      line-height: 1.82;
+      color: rgba(255,255,255,0.9);
+      max-width: 420px;
+      text-shadow: 0 6px 22px rgba(0,0,0,0.24);
+    }
+
+    .hero-chips {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .hero-chip {
+      min-height: 88px;
+      padding: 16px 12px;
+      border-radius: 18px;
+      background: rgba(8,9,9,0.18);
+      border: 1px solid rgba(255,255,255,0.06);
+      text-align: center;
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+
+    .hero-chip strong {
+      display: block;
+      font-size: 16px;
+      color: var(--gold);
+      margin-bottom: 8px;
+    }
+
+    .hero-chip span {
+      display: block;
+      font-size: 14px;
+      line-height: 1.65;
+      color: rgba(255,255,255,0.82);
+    }
+
+    .overlay-copy {
+      width: min(44%, 440px);
+      padding: 0;
+      border-radius: 0;
+      background: none;
+      border: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      box-shadow: none;
+    }
+
+    .overlay-copy--wide {
+      width: min(49%, 520px);
+    }
+
+    .overlay-copy--bottom {
+      align-self: flex-end;
+      margin-top: auto;
+    }
+
+    .overlay-copy--top-right {
+      margin-left: auto;
+      align-self: flex-start;
+    }
+
+    .overlay-copy--mid-left {
+      align-self: flex-start;
+      margin-top: 180px;
+    }
+
+    .section-index {
+      font-size: 19px;
+      color: rgba(255,255,255,0.62);
+      letter-spacing: 0.08em;
+      margin-bottom: 18px;
+    }
+
+    h2 {
+      font-size: 72px;
+      line-height: 1;
+      letter-spacing: -0.06em;
+      text-shadow: 0 10px 28px rgba(0,0,0,0.22);
+    }
+
+    .lead {
+      margin-top: 22px;
+      font-size: 22px;
+      line-height: 1.82;
+      color: rgba(255,255,255,0.9);
+      max-width: 440px;
+      text-shadow: 0 6px 20px rgba(0,0,0,0.2);
+    }
+
+    .bullet-box {
+      margin-top: 28px;
+      padding: 20px 0 0;
+      border-radius: 0;
+      border: none;
+      background: none;
+      border-top: 1px solid rgba(255,255,255,0.18);
+    }
+
+    .bullet-box h3 {
+      font-size: 22px;
+      color: var(--gold);
+      margin-bottom: 14px;
+    }
+
+    .bullet-box ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 12px;
+    }
+
+    .bullet-box li {
+      position: relative;
+      padding-left: 18px;
+      font-size: 18px;
+      line-height: 1.85;
+      color: rgba(255,255,255,0.92);
+    }
+
+    .bullet-box li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 13px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--gold);
+    }
+
+    .feature-grid {
+      margin-top: 24px;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+
+    .feature-card {
+      padding: 18px 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.03);
+    }
+
+    .feature-card strong {
+      display: block;
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+
+    .feature-card span {
+      display: block;
+      font-size: 17px;
+      line-height: 1.8;
+      color: rgba(255,255,255,0.72);
+    }
+
+    .pricing-page {
+      padding: 54px;
+    }
+
+    .pricing-head {
+      width: min(58%, 620px);
+      padding: 0;
+      border-radius: 22px;
+      background: none;
+      border: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+
+    .pricing-title {
+      margin-top: 18px;
+      font-size: 32px;
+      line-height: 1.6;
+      color: rgba(255,255,255,0.92);
+      text-shadow: 0 6px 22px rgba(0,0,0,0.24);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 30px;
+      border-radius: 20px;
+      overflow: hidden;
+      font-size: 15px;
+      background: rgba(8,9,9,0.34);
+      border: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(5px);
+      -webkit-backdrop-filter: blur(5px);
+    }
+
+    thead tr {
+      background: rgba(213,176,107,0.14);
+    }
+
+    th,
+    td {
+      padding: 14px 12px;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    th {
+      font-size: 14px;
+      color: rgba(255,246,226,0.88);
+      font-weight: 600;
+    }
+
+    td {
+      font-size: 15px;
+      color: rgba(255,255,255,0.82);
+      line-height: 1.7;
+    }
+
+    .price-col {
+      white-space: nowrap;
+      color: #f6d28d;
+      font-weight: 700;
+    }
+
+    .total {
+      margin-top: 24px;
+      width: min(46%, 420px);
+      padding: 26px 24px;
+      border-radius: 24px;
+      background:
+        radial-gradient(circle at top, rgba(213,176,107,0.18), transparent 34%),
+        rgba(8,9,9,0.72);
+      border: 1px solid rgba(255,255,255,0.08);
+      text-align: center;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .total small {
+      display: block;
+      font-size: 13px;
+      color: rgba(255,255,255,0.56);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .total strong {
+      display: block;
+      margin-top: 10px;
+      font-size: 64px;
+      line-height: 1;
+      color: #f3cc84;
+      letter-spacing: -0.06em;
+    }
+
+    .total p {
+      margin-top: 12px;
+      font-size: 16px;
+      color: rgba(255,255,255,0.78);
+    }
+
+    .footnotes {
+      margin-top: 24px;
+      width: min(66%, 720px);
+      padding: 22px;
+      border-radius: 22px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(8,9,9,0.56);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .footnotes h3 {
+      margin-bottom: 12px;
+      font-size: 18px;
+      color: var(--gold);
+    }
+
+    .footnotes ol {
+      margin: 0;
+      padding-left: 20px;
+      font-size: 16px;
+      line-height: 1.9;
+      color: rgba(255,255,255,0.74);
+    }
+
+    .footer-line {
+      margin-top: auto;
+      font-size: 13px;
+      color: rgba(255,255,255,0.44);
+      text-align: right;
+    }
+
+    @page {
+      size: A4 portrait;
+      margin: 12mm;
+    }
+
+    @media print {
+      html,
+      body {
+        background: #fff;
+      }
+
+      body {
+        padding: 0;
+      }
+
+      .book {
+        width: 100%;
+        gap: 0;
+      }
+
+      .page {
+        border: none;
+        box-shadow: none;
+        break-after: page;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="book">
+    <section class="page">
+      <div class="full-bleed" style="--bg-image:url('./images/hero-v2-a.png'); --focus-x: 30%;"></div>
+      <div class="page-inner">
+        <div class="hero-stack">
+          <span class="kicker">智能灌溉提案</span>
+          <div class="brandline">
+            <strong>及时雨</strong>
+            <span>smart irrigation proposal</span>
+          </div>
+          <h1>让花园<br>自己照顾自己</h1>
+          <div class="hero-lead">您与理想的庭院生活，只差一套会思考的智能灌溉系统。把灌溉交给算法，把夏天还给生活。</div>
+          <div class="hero-chips">
+            <div class="hero-chip">
+              <strong>智能感知</strong>
+              <span>湿度感知与自动决策</span>
+            </div>
+            <div class="hero-chip">
+              <strong>安全防护</strong>
+              <span>水路监测与异常预警</span>
+            </div>
+            <div class="hero-chip">
+              <strong>远程智控</strong>
+              <span>远程 OTA 与云端进化</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page">
+      <div class="full-bleed" style="--bg-image:url('./images/pain-point.png'); --focus-x: 28%;"></div>
+      <div class="page-inner">
+        <div class="overlay-copy overlay-copy--wide">
+          <div class="section-index">02 / 痛点共鸣</div>
+          <h2>生活不该<br>被水管绑架</h2>
+          <p class="lead">花园很美，但维护很累。烈日暴晒、蚊虫叮咬、出门总惦记浇花，时间被日常琐事一点点切走。</p>
+          <div class="bullet-box">
+            <h3>用户真实心境</h3>
+            <ul>
+              <li>我想去海边度假，但总担心花园缺水。</li>
+              <li>我想睡个懒觉，却总被浇花这件小事叫醒。</li>
+              <li>幸好，有「及时雨」，将繁琐留给算法，把盛夏还给生活。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page">
+      <div class="full-bleed" style="--bg-image:url('./images/auto-irrigation-v2.png'); --focus-x: 26%;"></div>
+      <div class="page-inner">
+        <div class="overlay-copy overlay-copy--mid-left">
+          <div class="section-index">03 / 全自动托管</div>
+          <h2>真正的<br>智能灌溉</h2>
+          <p class="lead">生态 AI 算法，深度感知土壤墒情，自动决策灌溉时机与时长。无需人工点击，不依赖机械定时，真正把花园托管给系统。</p>
+          <div class="bullet-box">
+            <h3>核心价值</h3>
+            <ul>
+              <li>根据土壤墒情自动灌溉</li>
+              <li>无需记忆，无需频繁手动干预</li>
+              <li>APP 可随时查看状态，也可一键临时接管</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page">
+      <div class="full-bleed" style="--bg-image:url('./images/rainbird-closeup-v2.png'); --focus-x: 68%;"></div>
+      <div class="page-inner">
+        <div class="overlay-copy overlay-copy--wide overlay-copy--top-right">
+          <div class="section-index">04 / 地埋隐藏式美学</div>
+          <h2>美观<br>也是一种功能</h2>
+          <p class="lead">采用美国雨鸟 Rain Bird 地埋式喷头，不工作时隐藏于草坪之下，工作时随水压优雅弹出，在别墅庭院中保留完整的景观秩序。</p>
+          <div class="bullet-box">
+            <h3>相较传统方案</h3>
+            <ul>
+              <li>避免地上明管和悬显喷头破坏整体景观</li>
+              <li>降低割草机误伤与长期暴晒老化风险</li>
+              <li>更符合高端住宅对整洁度与细节感的要求</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page">
+      <div class="full-bleed" style="--bg-image:url('./images/water-protection.png'); --focus-x: 50%;"></div>
+      <div class="page-inner">
+        <div class="overlay-copy overlay-copy--bottom">
+          <div class="section-index">05 / 水路双重防护</div>
+          <h2>开阀<br>不代表有水</h2>
+          <p class="lead">及时雨不只负责开和关，更负责判断是否真实出水、是否异常超时，以及是否需要保护整套路由。</p>
+          <div class="feature-grid">
+            <div class="feature-card">
+              <strong>开阀无水预警</strong>
+              <span>异常即时识别，减少人工后知后觉。</span>
+            </div>
+            <div class="feature-card">
+              <strong>超时自动关断</strong>
+              <span>主动终止潜在风险，保护泵体与阀件。</span>
+            </div>
+            <div class="feature-card">
+              <strong>水锤抑制逻辑</strong>
+              <span>降低冲击，延长整套水路寿命。</span>
+            </div>
+            <div class="feature-card">
+              <strong>监测闭环</strong>
+              <span>从开阀到出水都在掌控范围内。</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page">
+      <div class="full-bleed" style="--bg-image:url('./images/five-modes.png'); --focus-x: 50%;"></div>
+      <div class="page-inner">
+        <div class="overlay-copy overlay-copy--wide overlay-copy--bottom">
+          <div class="section-index">06 / 多场景适配</div>
+          <h2>五档模式<br>全场景适配</h2>
+          <p class="lead">草坪、菜地、果树、洗车、应急，一键切换。系统以更精细的分区思维服务不同植物与不同生活场景。</p>
+          <div class="feature-grid">
+            <div class="feature-card">
+              <strong>草坪模式</strong>
+              <span>适合均匀喷灌，兼顾覆盖与观感。</span>
+            </div>
+            <div class="feature-card">
+              <strong>菜地模式</strong>
+              <span>更适合柔和渗灌与局部补水。</span>
+            </div>
+            <div class="feature-card">
+              <strong>果树模式</strong>
+              <span>更重视深层补水与根区供水。</span>
+            </div>
+            <div class="feature-card">
+              <strong>洗车 / 应急</strong>
+              <span>兼顾生活化用水与临时接管需求。</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page">
+      <div class="full-bleed" style="--bg-image:url('./images/ota-v2.png'); --focus-x: 50%;"></div>
+      <div class="page-inner">
+        <div class="overlay-copy overlay-copy--wide overlay-copy--top-right">
+          <div class="section-index">07 / OTA 与云端进化</div>
+          <h2>您买的不是一台机器<br>而是一个数字园丁</h2>
+          <p class="lead">算法可远程无感升级，后续接入气象数据，依据降雨、温湿度与园区表现持续优化灌溉决策。</p>
+          <div class="bullet-box">
+            <h3>持续进化的能力</h3>
+            <ul>
+              <li>远程 OTA 升级</li>
+              <li>天气预测与降雨概率接入</li>
+              <li>温湿感知联动调度</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page">
+      <div class="full-bleed" style="--bg-image:url('./images/emotion-v2.png'); --focus-x: 40%;"></div>
+      <div class="page-inner">
+        <div class="overlay-copy overlay-copy--wide overlay-copy--bottom">
+          <div class="section-index">08 / 情绪收尾</div>
+          <h2>真正昂贵的<br>从来不是设备</h2>
+          <p class="lead">而是时间。是那些本该属于家人、属于假期、属于生活的时间。您买下的并不是一套灌溉系统，而是一个不被花园束缚的夏天。</p>
+          <div class="bullet-box">
+            <h3>一句话总结</h3>
+            <ul>
+              <li>让「及时雨」照顾这片土地，而您，去享受生活。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page">
+      <div class="full-bleed" style="--bg-image:url('./images/pricing-v2.png'); --focus-x: 50%;"></div>
+      <div class="page-inner pricing-page">
+        <div class="pricing-head">
+          <span class="kicker">专属报价</span>
+          <p class="pricing-title">刘总邸宅 · 智能化改造预算草案</p>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width:54px;">序</th>
+              <th style="width:130px;">模块</th>
+              <th>项目名称与核心价值描述</th>
+              <th style="width:120px;">估算价</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td>控制中枢</td>
+              <td>智能 8 路动力控制中枢，含物联网核心、云端安全监测与远程授权。</td>
+              <td class="price-col">3,900</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>水路硬件</td>
+              <td>工业级高寿命电磁阀、灌溉过滤组件，保障分区精度与稳定供水。</td>
+              <td class="price-col">450</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>传感器组</td>
+              <td>土壤湿度探头与闭环式水流检测传感器，形成完整监测闭环。</td>
+              <td class="price-col">300</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td>喷灌总成</td>
+              <td>美国雨鸟地埋式喷头、毛管与景观喷头，兼顾隐蔽与覆盖效率。</td>
+              <td class="price-col">1,000</td>
+            </tr>
+            <tr>
+              <td>5</td>
+              <td>施工辅料</td>
+              <td>户外专用线缆、保护线管、防水辅材包，满足别墅级弱电施工标准。</td>
+              <td class="price-col">1,100</td>
+            </tr>
+            <tr>
+              <td>6</td>
+              <td>工时服务</td>
+              <td>定位、诊断、安装、扇面微调、绿化恢复与现场清理。</td>
+              <td class="price-col">1,600</td>
+            </tr>
+            <tr>
+              <td>7</td>
+              <td>尊享维护</td>
+              <td>24 小时内本地响应，首年免费上门维护。</td>
+              <td class="price-col">0</td>
+            </tr>
+            <tr>
+              <td>8</td>
+              <td>增压泵组</td>
+              <td>全自动智能不锈钢增压泵，视现场动压情况选配。</td>
+              <td class="price-col">选配</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="total">
+          <small>系统全包落地总价</small>
+          <strong>¥8,350</strong>
+          <p>多退少补，无任何隐形消费</p>
+        </div>
+
+        <div class="footnotes">
+          <h3>施工约定</h3>
+          <ol>
+            <li>既有管网将尽量优先复用，施工前会进行压力与通水诊断。若存在地下暗漏或断裂，需另行修复或改造。</li>
+            <li>业主需将 220V 电源及市政自来水总阀接口引至控制箱与电磁阀井周边 3 米范围内。</li>
+            <li>喷洒效果基于标准市政动压不低于 0.3MPa。若现场动压不足，需选配智能增压泵总成。</li>
+          </ol>
+        </div>
+
+        <div class="footer-line">及时雨智能灌溉系统 · PDF 提案版</div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
